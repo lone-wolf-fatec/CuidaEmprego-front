@@ -1,0 +1,19 @@
+
+# Pasta de dependências (NÃO deve ir para o GitHub)
+node_modules/
+
+# Pastas geradas pelo build
+dist/
+build/
+.cache/
+
+# Configuração de pacotes
+package-lock.json
+yarn.lock
+
+# Logs e arquivos do sistema
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.DS_Store
+Thumbs.db

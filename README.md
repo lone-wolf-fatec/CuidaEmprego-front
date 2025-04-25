@@ -1,9 +1,7 @@
-<<<<<<< HEAD
-<<<<<<< HEAD
+
 Como Usar
 =======
 # Guia de Configuração de Projeto React com Tailwind CSS
->>>>>>> 496a21dbac11e9b30f1472434282e828d1a71a1d
 
 ## Pré-requisitos
 - Node.js (versão 18 ou superior)

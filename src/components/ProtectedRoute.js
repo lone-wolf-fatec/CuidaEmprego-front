@@ -1,67 +1,47 @@
-import React, { useEffect, useState } from 'react';
+// ========== ProtectedRoute.js - COMPONENTE DE PROTEÇÃO DE ROTAS ==========
+import React from 'react';
 import { Navigate, useLocation } from 'react-router-dom';
 
-const ProtectedRoute = ({ children, requiredRole }) => {
+const ProtectedRoute = ({ children, requireAuth = true, requireAdmin = false }) => {
   const location = useLocation();
-  const [isAuthorized, setIsAuthorized] = useState(null);
-  const [isLoading, setIsLoading] = useState(true);
 
-  useEffect(() => {
-    // Verificar autenticação e autorização
-    const checkAuth = () => {
-      try {
-        // Buscar dados do usuário do localStorage
-        const userData = JSON.parse(localStorage.getItem('user') || '{}');
-        
-        // Verificar se o usuário está autenticado
-        if (!userData.authenticated) {
-          setIsAuthorized(false);
-          return;
-        }
-        
-        // Se não há papel específico requerido, apenas autenticação é suficiente
-        if (!requiredRole) {
-          setIsAuthorized(true);
-          return;
-        }
-        
-        // Verificar se o usuário tem o papel necessário
-        const hasRequiredRole = userData.roles && 
-          userData.roles.includes(requiredRole);
-        
-        setIsAuthorized(hasRequiredRole);
-      } catch (error) {
-        console.error('Erro ao verificar autenticação:', error);
-        setIsAuthorized(false);
-      } finally {
-        setIsLoading(false);
-      }
-    };
-    
-    checkAuth();
-  }, [requiredRole]);
+  // Verificar se há dados de usuário
+  const user = JSON.parse(localStorage.getItem('user') || '{}');
+  const token = localStorage.getItem('token');
   
-  // Exibir loading enquanto verifica autenticação
-  if (isLoading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-purple-900 to-black">
-        <div className="text-center text-white">
-          <svg className="animate-spin h-10 w-10 mx-auto mb-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-          </svg>
-          <p>Verificando permissões...</p>
-        </div>
-      </div>
-    );
+  console.log('🛡️ ProtectedRoute verificação:', {
+    currentPath: location.pathname,
+    requireAuth,
+    requireAdmin,
+    userExists: !!user.email,
+    userAuthenticated: user.authenticated,
+    hasToken: !!token,
+    userRoles: user.roles,
+    isAdmin: user.isAdmin
+  });
+
+  // Se requer autenticação e não está autenticado
+  if (requireAuth) {
+    if (!user.authenticated || !token || !user.email) {
+      console.log('❌ Usuário não autenticado - redirecionando para login');
+      return <Navigate to="/login" state={{ from: location }} replace />;
+    }
   }
-  
-  // Redirecionar para login se não estiver autorizado
-  if (!isAuthorized) {
-    return <Navigate to="/login" state={{ from: location }} replace />;
+
+  // Se requer admin e não é admin
+  if (requireAdmin) {
+    const userRoles = Array.isArray(user.roles) ? user.roles : [user.roles].filter(Boolean);
+    const isAdmin = userRoles.some(role => 
+      role && typeof role === 'string' && role.toUpperCase() === 'ADMIN'
+    ) || user.isAdmin === true || user.email === 'admin@cuidaemprego.com';
+
+    if (!isAdmin) {
+      console.log('❌ Usuário não é admin - redirecionando para dashboard');
+      return <Navigate to="/dashboard" replace />;
+    }
   }
-  
-  // Renderizar componente filho se estiver autorizado
+
+  console.log('✅ Acesso autorizado');
   return children;
 };
 

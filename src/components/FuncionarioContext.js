@@ -1,431 +1,346 @@
-import React, { createContext, useState, useEffect, useCallback } from 'react';
+// src/contexts/FuncionarioContext.js
+import React, { createContext, useContext, useState, useEffect } from 'react';
+import axios from 'axios';
 
-// Criar o contexto
-export const FuncionariosContext = createContext();
+const FuncionarioContext = createContext();
 
-export const FuncionariosProvider = ({ children }) => {
-  // Estados principais
-  const [funcionarios, setFuncionarios] = useState([]);
-  const [horasExtras, setHorasExtras] = useState([]);
-  const [ferias, setFerias] = useState([]);
-  const [folgas, setFolgas] = useState([]);
-  const [ausencias, setAusencias] = useState([]);
-  const [jornadas, setJornadas] = useState([]);
-  
-  // Estado do usuário logado
-  const [usuarioLogado, setUsuarioLogado] = useState(null);
-  
-  // Carregar dados iniciais do localStorage
-  useEffect(() => {
-    // Carregar funcionários
-    const storedFuncionarios = localStorage.getItem('funcionarios');
-    if (storedFuncionarios) {
-      try {
-        setFuncionarios(JSON.parse(storedFuncionarios));
-      } catch (error) {
-        console.error('Erro ao carregar funcionários:', error);
-        setFuncionarios([]);
-      }
-    }
-    
-    // Carregar horas extras
-    const storedHorasExtras = localStorage.getItem('overtimeEntries');
-    if (storedHorasExtras) {
-      try {
-        setHorasExtras(JSON.parse(storedHorasExtras));
-      } catch (error) {
-        console.error('Erro ao carregar horas extras:', error);
-        setHorasExtras([]);
-      }
-    }
-    
-    // Carregar férias
-    const storedFerias = localStorage.getItem('feriasEntries');
-    if (storedFerias) {
-      try {
-        setFerias(JSON.parse(storedFerias));
-      } catch (error) {
-        console.error('Erro ao carregar férias:', error);
-        setFerias([]);
-      }
-    }
-    
-    // Carregar folgas
-    const storedFolgas = localStorage.getItem('folgaEntries');
-    if (storedFolgas) {
-      try {
-        setFolgas(JSON.parse(storedFolgas));
-      } catch (error) {
-        console.error('Erro ao carregar folgas:', error);
-        setFolgas([]);
-      }
-    }
-    
-    // Carregar ausências
-    const storedAusencias = localStorage.getItem('ausencias');
-    if (storedAusencias) {
-      try {
-        setAusencias(JSON.parse(storedAusencias));
-      } catch (error) {
-        console.error('Erro ao carregar ausências:', error);
-        setAusencias([]);
-      }
-    }
-    
-    // Carregar jornadas
-    const storedJornadas = localStorage.getItem('jornadas');
-    if (storedJornadas) {
-      try {
-        setJornadas(JSON.parse(storedJornadas));
-      } catch (error) {
-        console.error('Erro ao carregar jornadas:', error);
-        setJornadas([]);
-      }
-    }
-    
-    // Carregar usuário logado
-    const storedUser = localStorage.getItem('user');
-    if (storedUser) {
-      try {
-        setUsuarioLogado(JSON.parse(storedUser));
-      } catch (error) {
-        console.error('Erro ao carregar usuário logado:', error);
-        setUsuarioLogado(null);
-      }
-    }
-  }, []);
-  
-  // Salvar dados no localStorage quando mudarem
-  useEffect(() => {
-    localStorage.setItem('funcionarios', JSON.stringify(funcionarios));
-  }, [funcionarios]);
-  
-  useEffect(() => {
-    localStorage.setItem('overtimeEntries', JSON.stringify(horasExtras));
-  }, [horasExtras]);
-  
-  useEffect(() => {
-    localStorage.setItem('feriasEntries', JSON.stringify(ferias));
-  }, [ferias]);
-  
-  useEffect(() => {
-    localStorage.setItem('folgaEntries', JSON.stringify(folgas));
-  }, [folgas]);
-  
-  useEffect(() => {
-    localStorage.setItem('ausencias', JSON.stringify(ausencias));
-  }, [ausencias]);
-  
-  useEffect(() => {
-    localStorage.setItem('jornadas', JSON.stringify(jornadas));
-  }, [jornadas]);
-  
-  // Funções para gerenciar funcionários
-  const adicionarFuncionario = (funcionario) => {
-    // Verificar se já existe um funcionário com esse ID
-    const funcionarioExistente = funcionarios.find(f => parseInt(f.id) === parseInt(funcionario.id));
-    
-    if (funcionarioExistente) {
-      // Atualizar funcionário existente
-      const newFuncionarios = funcionarios.map(f => 
-        parseInt(f.id) === parseInt(funcionario.id) ? { ...f, ...funcionario } : f
-      );
-      setFuncionarios(newFuncionarios);
-    } else {
-      // Adicionar novo funcionário
-      setFuncionarios([...funcionarios, funcionario]);
-    }
-  };
-  
-  const obterFuncionarioPorId = useCallback((id) => {
-    if (!id) return null;
-    return funcionarios.find(f => parseInt(f.id) === parseInt(id)) || null;
-  }, [funcionarios]);
-  
-  // Funções para gerenciar horas extras
-  const adicionarHoraExtra = (horaExtra) => {
-    // Garantir que o ID do funcionário seja número
-    const novaHoraExtra = {
-      ...horaExtra,
-      id: horaExtra.id || Date.now(),
-      funcionarioId: parseInt(horaExtra.funcionarioId)
-    };
-    
-    setHorasExtras([novaHoraExtra, ...horasExtras]);
-  };
-  
-  const atualizarStatusHoraExtra = (id, novoStatus, observacao = '') => {
-    const newHorasExtras = horasExtras.map(item => 
-      item.id === id 
-        ? { ...item, status: novoStatus, observacao: observacao || item.observacao } 
-        : item
-    );
-    setHorasExtras(newHorasExtras);
-    
-    // Adicionar notificação para o funcionário
-    const horaExtra = horasExtras.find(he => he.id === id);
-    if (horaExtra) {
-      const notificacoes = JSON.parse(localStorage.getItem('userNotifications') || '[]');
-      notificacoes.push({
-        id: Date.now(),
-        userId: horaExtra.funcionarioId,
-        message: `Sua solicitação de hora extra para ${horaExtra.date} foi ${novoStatus === 'aprovado' ? 'aprovada' : 'rejeitada'}.`,
-        date: new Date().toLocaleDateString('pt-BR'),
-        read: false
-      });
-      localStorage.setItem('userNotifications', JSON.stringify(notificacoes));
-    }
-  };
-  
-  const detectarHorasExtras = () => {
-    const pontoRegistros = JSON.parse(localStorage.getItem('pontoRegistros') || '[]');
-    let horasExtrasDetectadas = [];
-    
-    pontoRegistros.forEach(registro => {
-      // Verificar se já existe uma hora extra para este funcionário e dia
-      const horaExtraExistente = horasExtras.find(
-        he => parseInt(he.funcionarioId) === parseInt(registro.funcionarioId) && he.date === registro.data
-      );
-      
-      if (!horaExtraExistente) {
-        // Verificar se há registro de hora extra
-        // Simplificação: se saiu depois das 18h, considera hora extra
-        const ultimoRegistro = registro.registros[registro.registros.length - 1];
-        
-        if (ultimoRegistro && ultimoRegistro.hora && ultimoRegistro.hora !== '--:--') {
-          const horaSaida = ultimoRegistro.hora.split(':').map(Number);
-          
-          // Se saiu depois das 18h
-          if (horaSaida[0] >= 18) {
-            const horasExtras = horaSaida[0] - 18 + (horaSaida[1] / 60);
-            
-            if (horasExtras > 0) {
-              // Buscar nome do funcionário
-              const funcionario = obterFuncionarioPorId(registro.funcionarioId);
-              const funcionarioNome = funcionario ? funcionario.nome : registro.funcionarioNome || 'Funcionário';
-              
-              horasExtrasDetectadas.push({
-                id: Date.now() + Math.random(),
-                funcionarioId: parseInt(registro.funcionarioId),
-                funcionarioNome: funcionarioNome,
-                date: registro.data,
-                hours: parseFloat(horasExtras.toFixed(1)),
-                status: 'detectado',
-                reason: 'Detectado automaticamente',
-                auto: true
-              });
-            }
-          }
-        }
-      }
-    });
-    
-    if (horasExtrasDetectadas.length > 0) {
-      setHorasExtras([...horasExtrasDetectadas, ...horasExtras]);
-      return horasExtrasDetectadas.length;
-    }
-    
-    return 0;
-  };
-  
-  // Funções para obter dados do usuário atual
-  const getHorasExtrasUsuarioAtual = useCallback(() => {
-    if (!usuarioLogado || !usuarioLogado.id) return [];
-    
-    return horasExtras.filter(item => 
-      parseInt(item.funcionarioId) === parseInt(usuarioLogado.id) && 
-      (item.status === 'aprovado' || item.status === 'detectado')
-    ).sort((a, b) => {
-      // Ordenar por data (mais recentes primeiro)
-      try {
-        const [diaA, mesA, anoA] = a.date.split('/').map(Number);
-        const [diaB, mesB, anoB] = b.date.split('/').map(Number);
-        
-        const dateA = new Date(anoA, mesA - 1, diaA);
-        const dateB = new Date(anoB, mesB - 1, diaB);
-        
-        return dateB - dateA; // Ordem decrescente
-      } catch (error) {
-        return 0;
-      }
-    });
-  }, [usuarioLogado, horasExtras]);
-  
-  const getFeriasUsuarioAtual = useCallback(() => {
-    if (!usuarioLogado || !usuarioLogado.id) return [];
-    
-    return ferias.filter(item => 
-      parseInt(item.funcionarioId) === parseInt(usuarioLogado.id) && 
-      item.status === 'aprovado'
-    );
-  }, [usuarioLogado, ferias]);
-  
-  const getFolgasUsuarioAtual = useCallback(() => {
-    if (!usuarioLogado || !usuarioLogado.id) return [];
-    
-    return folgas.filter(item => 
-      parseInt(item.funcionarioId) === parseInt(usuarioLogado.id) && 
-      item.status === 'aprovado'
-    );
-  }, [usuarioLogado, folgas]);
-  
-  const getAusenciasUsuarioAtual = useCallback(() => {
-    if (!usuarioLogado || !usuarioLogado.id) return [];
-    
-    return ausencias.filter(item => 
-      parseInt(item.employeeId) === parseInt(usuarioLogado.id) && 
-      item.status === 'aprovado'
-    );
-  }, [usuarioLogado, ausencias]);
-  
-  const getJornadaUsuarioAtual = useCallback(() => {
-    if (!usuarioLogado || !usuarioLogado.id) return null;
-    
-    return jornadas.find(item => 
-      parseInt(item.employeeId) === parseInt(usuarioLogado.id)
-    ) || null;
-  }, [usuarioLogado, jornadas]);
-  
-  const getBancoHorasUsuarioAtual = useCallback(() => {
-    if (!usuarioLogado || !usuarioLogado.id) return null;
-    
-    const funcionario = obterFuncionarioPorId(usuarioLogado.id);
-    
-    if (funcionario && funcionario.bancoHoras !== undefined) {
-      return { 
-        saldo: funcionario.bancoHoras,
-        ultimaAtualizacao: new Date().toLocaleDateString('pt-BR')
-      };
-    }
-    
-    // Se não encontrar, calcular baseado nas horas extras e folgas
-    const horasExtrasAprovadas = getHorasExtrasUsuarioAtual();
-    const folgasAprovadas = getFolgasUsuarioAtual();
-    
-    const horasExtrasTotal = horasExtrasAprovadas.reduce((total, item) => total + item.hours, 0);
-    const folgasHoras = folgasAprovadas
-      .filter(item => item.tipo === 'banco de horas')
-      .reduce((total, item) => total + (item.periodo === 'dia' ? 8 : 4), 0);
-    
-    const saldoEstimado = horasExtrasTotal - folgasHoras;
-    
+export const useFuncionario = () => {
+  const context = useContext(FuncionarioContext);
+  if (!context) {
+    throw new Error('useFuncionario deve ser usado dentro de FuncionarioProvider');
+  }
+  return context;
+};
+
+export const FuncionarioProvider = ({ children }) => {
+  const [funcionario, setFuncionario] = useState(null);
+  const [funcionarios, setFuncionarios] = useState([]); // Lista de todos os funcionários
+  const [loading, setLoading] = useState(true);
+  const [loadingFuncionarios, setLoadingFuncionarios] = useState(false);
+  const [error, setError] = useState(null);
+
+  // Função para obter headers de autenticação
+  const getAuthHeaders = () => {
+    const token = localStorage.getItem('token');
     return {
-      saldo: saldoEstimado,
-      ultimaAtualizacao: new Date().toLocaleDateString('pt-BR'),
-      estimado: true
+      headers: {
+        Authorization: `Bearer ${token}`,
+        'Content-Type': 'application/json'
+      }
     };
-  }, [usuarioLogado, funcionarios, getHorasExtrasUsuarioAtual, getFolgasUsuarioAtual, obterFuncionarioPorId]);
-  
-  // Função para login e logout
-  const realizarLogin = (dados) => {
-    setUsuarioLogado(dados);
-    localStorage.setItem('user', JSON.stringify(dados));
   };
-  
-  const realizarLogout = () => {
-    setUsuarioLogado(null);
-    localStorage.removeItem('user');
-  };
-  
-  // Função para obter todos os funcionários possíveis
-  const getAllPossibleFuncionarios = useCallback(() => {
+
+  // Buscar todos os funcionários do banco de dados
+  const buscarTodosFuncionarios = async () => {
     try {
-      // 1. Obter do registeredUsers
-      const registeredUsers = JSON.parse(localStorage.getItem('registeredUsers') || '[]');
-      const funcionariosFromUsers = registeredUsers.map(user => ({
-        id: user.id,
-        nome: user.name || user.nome
-      }));
+      setLoadingFuncionarios(true);
       
-      // 2. Obter outros funcionários dos registros de horas extras
-      const funcionariosFromOvertime = horasExtras.map(entry => ({
-        id: entry.funcionarioId,
-        nome: entry.funcionarioNome
-      }));
-      
-      // 3. Criar um mapa para eliminar duplicatas por ID
-      const funcionariosMap = new Map();
-      
-      // Adicionar de todas as fontes
-      [
-        ...funcionariosFromUsers, 
-        ...funcionariosFromOvertime,
-        ...funcionarios
-      ].forEach(func => {
-        if (func && func.id) {
-          funcionariosMap.set(parseInt(func.id), func);
+      // Primeiro tenta buscar do backend
+      try {
+        const response = await axios.get(
+          'http://localhost:8080/api/usuarios',
+          getAuthHeaders()
+        );
+        
+        // Mapear os dados do backend para o formato esperado
+        const funcionariosMapeados = response.data.map(user => ({
+          id: user.id,
+          nome: user.name || user.username,
+          email: user.email,
+          cargo: user.cargo,
+          departamento: user.departamento,
+          dataAdmissao: user.dataAdmissao,
+          salario: user.salario,
+          diasFeriasDisponiveis: user.diasFeriasDisponiveis || 30,
+          roles: user.roles || []
+        }));
+        
+        setFuncionarios(funcionariosMapeados);
+        
+        // Salvar no localStorage como cache
+        localStorage.setItem('funcionarios_cache', JSON.stringify(funcionariosMapeados));
+        
+        console.log('✅ Funcionários carregados do backend:', funcionariosMapeados.length);
+        return funcionariosMapeados;
+        
+      } catch (backendError) {
+        console.warn('⚠️ Backend não disponível, usando dados locais:', backendError.message);
+        
+        // Fallback para sistema local
+        const localUsers = JSON.parse(localStorage.getItem('cuidaemprego_users') || '{}');
+        const localFuncionarios = JSON.parse(localStorage.getItem('cuidaemprego_funcionarios') || '[]');
+        const cachedFuncionarios = JSON.parse(localStorage.getItem('funcionarios_cache') || '[]');
+        
+        // Se tem cache, usa o cache
+        if (cachedFuncionarios.length > 0) {
+          setFuncionarios(cachedFuncionarios);
+          console.log('✅ Funcionários carregados do cache:', cachedFuncionarios.length);
+          return cachedFuncionarios;
         }
-      });
+        
+        // Senão, monta a partir dos dados locais
+        const funcionariosLocais = [];
+        
+        // Adiciona funcionários do sistema de usuários locais
+        Object.values(localUsers).forEach(user => {
+          funcionariosLocais.push({
+            id: user.id,
+            nome: user.name,
+            email: user.email,
+            cargo: user.cargo || 'Não informado',
+            departamento: user.departamento || 'Não informado',
+            dataAdmissao: user.createdAt || new Date().toISOString(),
+            salario: user.salario || 0,
+            diasFeriasDisponiveis: 30,
+            roles: user.roles || []
+          });
+        });
+        
+        // Adiciona funcionários da lista local que não estão nos usuários
+        localFuncionarios.forEach(nomeFuncionario => {
+          const jaExiste = funcionariosLocais.some(f => f.nome === nomeFuncionario);
+          if (!jaExiste) {
+            funcionariosLocais.push({
+              id: Math.floor(Math.random() * 100000),
+              nome: nomeFuncionario,
+              email: `${nomeFuncionario.toLowerCase().replace(/\s+/g, '.')}@empresa.com`,
+              cargo: 'Funcionário',
+              departamento: 'Geral',
+              dataAdmissao: new Date().toISOString(),
+              salario: 0,
+              diasFeriasDisponiveis: 30,
+              roles: ['FUNCIONARIO']
+            });
+          }
+        });
+        
+        setFuncionarios(funcionariosLocais);
+        console.log('✅ Funcionários carregados do sistema local:', funcionariosLocais.length);
+        return funcionariosLocais;
+      }
       
-      // Converter de volta para array
-      return Array.from(funcionariosMap.values());
     } catch (error) {
-      console.error('Erro ao obter funcionários de todas as fontes:', error);
+      console.error('❌ Erro ao buscar funcionários:', error);
+      setError('Erro ao carregar lista de funcionários');
       return [];
+    } finally {
+      setLoadingFuncionarios(false);
     }
-  }, [funcionarios, horasExtras]);
-  
-  // Formatação de data para padronização (YYYY-MM-DD para DD/MM/YYYY)
-  const formatarData = (dataStr) => {
-    if (!dataStr) return '';
-    
+  };
+
+  // Adicionar novo funcionário
+  const adicionarFuncionario = async (dadosFuncionario) => {
     try {
-      if (dataStr.includes('/')) return dataStr; // Já está formatado
+      // Tenta adicionar no backend
+      try {
+        const response = await axios.post(
+          'http://localhost:8080/api/usuarios',
+          dadosFuncionario,
+          getAuthHeaders()
+        );
+        
+        // Recarrega a lista de funcionários
+        await buscarTodosFuncionarios();
+        return response.data;
+        
+      } catch (backendError) {
+        console.warn('⚠️ Erro no backend, adicionando localmente:', backendError.message);
+        
+        // Adiciona no sistema local
+        const novoFuncionario = {
+          id: Math.floor(Math.random() * 100000),
+          nome: dadosFuncionario.name || dadosFuncionario.nome,
+          email: dadosFuncionario.email,
+          cargo: dadosFuncionario.cargo || 'Funcionário',
+          departamento: dadosFuncionario.departamento || 'Geral',
+          dataAdmissao: new Date().toISOString(),
+          salario: dadosFuncionario.salario || 0,
+          diasFeriasDisponiveis: 30,
+          roles: dadosFuncionario.roles || ['FUNCIONARIO']
+        };
+        
+        // Adiciona à lista local
+        const funcionariosAtuais = [...funcionarios, novoFuncionario];
+        setFuncionarios(funcionariosAtuais);
+        
+        // Atualiza localStorage
+        const localFuncionarios = JSON.parse(localStorage.getItem('cuidaemprego_funcionarios') || '[]');
+        if (!localFuncionarios.includes(novoFuncionario.nome)) {
+          localFuncionarios.push(novoFuncionario.nome);
+          localStorage.setItem('cuidaemprego_funcionarios', JSON.stringify(localFuncionarios));
+        }
+        
+        return novoFuncionario;
+      }
       
-      const data = new Date(dataStr);
-      const dia = String(data.getDate()).padStart(2, '0');
-      const mes = String(data.getMonth() + 1).padStart(2, '0');
-      const ano = data.getFullYear();
-      
-      return `${dia}/${mes}/${ano}`;
     } catch (error) {
-      console.error('Erro ao formatar data:', error);
-      return dataStr;
+      console.error('❌ Erro ao adicionar funcionário:', error);
+      throw error;
     }
   };
-  
-  // Valores expostos pelo contexto
-  const value = {
-    // Dados
-    funcionarios,
-    horasExtras,
-    ferias,
-    folgas,
-    ausencias,
-    jornadas,
-    usuarioLogado,
-    
-    // Funções de gerenciamento de funcionários
-    adicionarFuncionario,
-    obterFuncionarioPorId,
-    getAllPossibleFuncionarios,
-    
-    // Funções de gerenciamento de horas extras
-    adicionarHoraExtra,
-    atualizarStatusHoraExtra,
-    detectarHorasExtras,
-    
-    // Funções para obter dados do usuário atual
-    getHorasExtrasUsuarioAtual,
-    getFeriasUsuarioAtual,
-    getFolgasUsuarioAtual,
-    getAusenciasUsuarioAtual,
-    getJornadaUsuarioAtual,
-    getBancoHorasUsuarioAtual,
-    
-    // Funções de autenticação
-    realizarLogin,
-    realizarLogout,
-    
-    // Funções utilitárias
-    formatarData
+
+  // Inicializar funcionário do localStorage
+  const initializeFuncionario = () => {
+    try {
+      const userFromStorage = JSON.parse(localStorage.getItem('user') || '{}');
+      const token = localStorage.getItem('token');
+
+      if (userFromStorage.authenticated && token && userFromStorage.id) {
+        const funcionarioData = {
+          id: userFromStorage.id,
+          name: userFromStorage.name || userFromStorage.username,
+          email: userFromStorage.email,
+          initials: getInitials(userFromStorage.name || userFromStorage.username),
+          isAdmin: userFromStorage.roles?.includes('ADMIN') || false,
+          authenticated: true,
+          jornadaTrabalho: {
+            inicio: '08:00',
+            fimManha: '12:00',
+            inicioTarde: '13:00',
+            fim: '17:00',
+            toleranciaAtraso: 10
+          }
+        };
+        
+        setFuncionario(funcionarioData);
+        console.log('✅ Funcionário inicializado do localStorage:', funcionarioData);
+        
+        // Carregar dados completos do backend
+        carregarDadosCompletos(userFromStorage.id);
+      } else {
+        setError('Usuário não autenticado');
+        setLoading(false);
+      }
+    } catch (error) {
+      console.error('❌ Erro ao inicializar funcionário:', error);
+      setError('Erro ao carregar dados do usuário');
+      setLoading(false);
+    }
   };
-  
+
+  // Carregar dados completos do backend
+  const carregarDadosCompletos = async (userId) => {
+    try {
+      const response = await axios.get(
+        `http://localhost:8080/api/usuarios/${userId}`, 
+        getAuthHeaders()
+      );
+      
+      const userData = response.data;
+      const funcionarioCompleto = {
+        id: userData.id,
+        name: userData.name || userData.username,
+        email: userData.email,
+        initials: getInitials(userData.name || userData.username),
+        isAdmin: userData.roles?.includes('ADMIN') || false,
+        authenticated: true,
+        jornadaTrabalho: userData.jornadaTrabalho || {
+          inicio: '08:00',
+          fimManha: '12:00',
+          inicioTarde: '13:00',
+          fim: '17:00',
+          toleranciaAtraso: 10
+        },
+        // Dados adicionais do funcionário
+        cargo: userData.cargo,
+        departamento: userData.departamento,
+        dataAdmissao: userData.dataAdmissao,
+        salario: userData.salario
+      };
+
+      setFuncionario(funcionarioCompleto);
+      
+      // Atualizar localStorage com dados completos
+      localStorage.setItem('user', JSON.stringify({
+        ...funcionarioCompleto,
+        authenticated: true
+      }));
+
+      console.log('✅ Dados completos do funcionário carregados:', funcionarioCompleto);
+    } catch (error) {
+      console.error('❌ Erro ao carregar dados completos:', error);
+      // Manter dados básicos se falhar ao carregar completos
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Função auxiliar para obter iniciais
+  const getInitials = (name) => {
+    if (!name) return 'U';
+    const nameParts = name.split(' ');
+    if (nameParts.length === 1) return nameParts[0].charAt(0).toUpperCase();
+    return (nameParts[0].charAt(0) + nameParts[nameParts.length - 1].charAt(0)).toUpperCase();
+  };
+
+  // Atualizar funcionário
+  const updateFuncionario = (novosDados) => {
+    setFuncionario(prev => ({
+      ...prev,
+      ...novosDados
+    }));
+    
+    // Atualizar localStorage
+    const updatedUser = {
+      ...funcionario,
+      ...novosDados,
+      authenticated: true
+    };
+    localStorage.setItem('user', JSON.stringify(updatedUser));
+  };
+
+  // Logout
+  const logout = () => {
+    setFuncionario(null);
+    setFuncionarios([]);
+    localStorage.removeItem('user');
+    localStorage.removeItem('token');
+    localStorage.removeItem('funcionarios_cache');
+    setError(null);
+  };
+
+  // Verificar se é admin
+  const isAdmin = () => {
+    return funcionario?.isAdmin || false;
+  };
+
+  // Verificar se está autenticado
+  const isAuthenticated = () => {
+    return funcionario?.authenticated && localStorage.getItem('token');
+  };
+
+  // Inicializar ao montar o componente
+  useEffect(() => {
+    initializeFuncionario();
+    
+    // Carrega a lista de funcionários após inicializar
+    const loadFuncionarios = async () => {
+      await buscarTodosFuncionarios();
+    };
+    
+    loadFuncionarios();
+  }, []);
+
+  const value = {
+    funcionario,
+    funcionarios,
+    loading,
+    loadingFuncionarios,
+    error,
+    updateFuncionario,
+    logout,
+    isAdmin,
+    isAuthenticated,
+    carregarDadosCompletos,
+    buscarTodosFuncionarios,
+    adicionarFuncionario
+  };
+
   return (
-    <FuncionariosContext.Provider value={value}>
+    <FuncionarioContext.Provider value={value}>
       {children}
-    </FuncionariosContext.Provider>
+    </FuncionarioContext.Provider>
   );
 };
 
-export default FuncionarioContext;
+export default FuncionarioProvider;

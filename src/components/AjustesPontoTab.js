@@ -1,271 +1,275 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useUser } from '../context/UserContext';
 import { useNavigate } from 'react-router-dom';
+import axios from 'axios';
 
-// Constante para a chave do localStorage
-const FUNCIONARIOS_KEY = 'funcionarios';
+// Configuração do Axios para ajustes de ponto
+const api = axios.create({
+  baseURL: 'http://localhost:8080/api',
+  headers: {
+    'Content-Type': 'application/json',
+  },
+});
+
+// Interceptor para incluir token
+api.interceptors.request.use(
+  (config) => {
+    const token = localStorage.getItem('token');
+    if (token) {
+      config.headers.Authorization = `Bearer ${token}`;
+    }
+    return config;
+  },
+  (error) => Promise.reject(error)
+);
 
 const AjustesPontoTab = () => {
   // Hooks e Context
   const { userData, funcionarios, refreshFuncionarios } = useUser();
   const navigate = useNavigate();
   
-  // Estado local para funcionários
-  const [localFuncionarios, setLocalFuncionarios] = useState([]);
+  // Estado para as solicitações de ajuste (agora vem do backend)
+  const [solicitacoes, setSolicitacoes] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
   
-  // Estado para as solicitações de ajuste
-  const [solicitacoes, setSolicitacoes] = useState(() => {
-    const storedSolicitacoes = localStorage.getItem('ajustePontoSolicitacoes');
-    return storedSolicitacoes ? JSON.parse(storedSolicitacoes) : [
-      { 
-        id: 1, 
-        funcionarioId: 102, 
-        funcionarioNome: 'Maria Oliveira', 
-        data: '19/03/2025', 
-        tipoRegistro: 'entrada',
-        horaOriginal: '08:15',
-        horaCorreta: '08:00',
-        motivo: 'Problema no sistema de ponto',
-        status: 'pendente',
-        dataSolicitacao: '19/03/2025'
-      }
-    ];
-  });
-
   // Estados para modais
   const [modalRejeitarAberto, setModalRejeitarAberto] = useState(false);
   const [modalAprovarAberto, setModalAprovarAberto] = useState(false);
   const [solicitacaoSelecionada, setSolicitacaoSelecionada] = useState(null);
   const [observacaoRejeicao, setObservacaoRejeicao] = useState('');
   const [observacaoAprovacao, setObservacaoAprovacao] = useState('');
-
-  // Estados para filtros
+  const [processandoDecisao, setProcessandoDecisao] = useState(false);
+  
+  // Estados para filtros (conectados com backend)
   const [filtros, setFiltros] = useState({
     status: '',
     funcionario: '',
+    funcionarioId: '',
     periodo: ''
   });
-
-  // Estado para lista consolidada de funcionários
-  const [allFuncionarios, setAllFuncionarios] = useState([]);
-
-  // Funções auxiliares
-  const getAllPossibleFuncionarios = useCallback(() => {
+  
+  // Estado para lista de funcionários únicos
+  const [funcionariosUnicos, setFuncionariosUnicos] = useState([]);
+  
+  // Carregar solicitações de ajuste do backend
+  const carregarSolicitacoes = useCallback(async () => {
     try {
-      const registeredUsers = JSON.parse(localStorage.getItem('registeredUsers') || '[]');
-      const funcionariosFromUsers = registeredUsers.map(user => ({
-        id: user.id,
-        nome: user.name || user.nome
-      }));
+      setLoading(true);
+      setError('');
       
-      const storedFuncionarios = JSON.parse(localStorage.getItem('funcionarios') || '[]');
-      const contextFuncionarios = funcionarios || [];
-      const localFuncs = localFuncionarios || [];
+      // Construir parâmetros de filtro
+      const params = new URLSearchParams();
+      if (filtros.status) params.append('status', filtros.status);
+      if (filtros.funcionarioId) params.append('funcionarioId', filtros.funcionarioId);
+      if (filtros.periodo) params.append('periodo', filtros.periodo);
       
-      const funcionariosMap = new Map();
+      const response = await api.get(`/ajustes-ponto?${params.toString()}`);
+      console.log('Solicitações carregadas do backend:', response.data);
       
-      [...funcionariosFromUsers, ...storedFuncionarios, ...contextFuncionarios, ...localFuncs]
-        .forEach(func => {
-          if (func && func.id) {
-            funcionariosMap.set(func.id, func);
-          }
-        });
+      setSolicitacoes(response.data);
       
-      return Array.from(funcionariosMap.values());
+      // Extrair funcionários únicos das solicitações
+      const funcionariosUnicos = [...new Set(response.data.map(s => ({
+        id: s.funcionarioId,
+        nome: s.funcionarioNome
+      })))];
+      
+      setFuncionariosUnicos(funcionariosUnicos);
+      
     } catch (error) {
-      console.error('Erro ao obter funcionários de todas as fontes:', error);
-      return [];
+      console.error('Erro ao carregar solicitações:', error);
+      
+      // Fallback para localStorage se backend estiver offline
+      const storedSolicitacoes = localStorage.getItem('ajustePontoSolicitacoes');
+      if (storedSolicitacoes) {
+        console.log('📦 Usando dados do localStorage como fallback');
+        setSolicitacoes(JSON.parse(storedSolicitacoes));
+        setError('Exibindo dados offline devido a erro de conexão');
+      }
+      
+    } finally {
+      setLoading(false);
     }
-  }, [funcionarios, localFuncionarios]);
+  }, [filtros]);
 
-  // Effects
   useEffect(() => {
-    const updateAllFuncionarios = () => {
-      const allPossible = getAllPossibleFuncionarios();
-      setAllFuncionarios(allPossible);
-    };
+    console.log('🔧 AjustesPontoTab: Inicializando componente');
     
-    updateAllFuncionarios();
-    const interval = setInterval(updateAllFuncionarios, 2000);
-    return () => clearInterval(interval);
-  }, [getAllPossibleFuncionarios]);
-
-  useEffect(() => {
-    if (!userData || !userData.authenticated) {
-      navigate('/login');
+    const token = localStorage.getItem('token');
+    const storedUser = JSON.parse(localStorage.getItem('user') || '{}');
+    if (!token || !storedUser.authenticated) {
+      console.log('❌ AjustesPontoTab: Usuário não autenticado - aguardando AdminDashboard lidar com isso');
       return;
     }
     
-    if (!userData.roles || !userData.roles.includes('ADMIN')) {
-      navigate('/dashboard');
+    const isAdmin = storedUser.isAdmin ||
+                    storedUser.email === 'admin@cuidaemprego.com' ||
+                    (storedUser.roles && storedUser.roles.some(role =>
+                      role && typeof role === 'string' && role.toUpperCase() === 'ADMIN'
+                    ));
+                    
+    if (!isAdmin) {
+      console.log('❌ AjustesPontoTab: Usuário não é admin - aguardando AdminDashboard lidar com isso');
       return;
     }
     
+    console.log('✅ AjustesPontoTab: Usuário validado, carregando funcionários');
     refreshFuncionarios();
-  }, [userData, navigate, refreshFuncionarios]);
-
-  // Funções de aprovação e rejeição
+    
+  }, [refreshFuncionarios]);
+  
+  useEffect(() => {
+    const token = localStorage.getItem('token');
+    if (token) {
+      carregarSolicitacoes();
+    }
+  }, [carregarSolicitacoes]);
+  
+  // Função para aplicar filtros (conectada com backend via parâmetros)
+  const aplicarFiltros = (novosFiltros) => {
+    setFiltros(prevFiltros => ({
+      ...prevFiltros,
+      ...novosFiltros
+    }));
+  };
+  
+  // Função para limpar filtros
+  const limparFiltros = () => {
+    setFiltros({
+      status: '',
+      funcionario: '',
+      funcionarioId: '',
+      periodo: ''
+    });
+  };
+  
+  // Funções de aprovação e rejeição (conectadas com backend)
   const abrirModalAprovar = (solicitacao) => {
     setSolicitacaoSelecionada(solicitacao);
+    setObservacaoAprovacao('');
     setModalAprovarAberto(true);
   };
-
-  const aprovarSolicitacao = () => {
-    if (!solicitacaoSelecionada) return;
-
-    const solicitacoesAtualizadas = solicitacoes.map(s => {
-      if (s.id === solicitacaoSelecionada.id) {
-        return {
-          ...s,
-          status: 'aprovado',
-          dataDecisao: new Date().toLocaleDateString('pt-BR'),
-          justificativaAdmin: observacaoAprovacao
-        };
+  
+  const aprovarSolicitacao = async () => {
+    if (!solicitacaoSelecionada || processandoDecisao) return;
+    try {
+      setProcessandoDecisao(true);
+      await api.put(`/ajustes-ponto/${solicitacaoSelecionada.id}/decisao`, {
+        decisao: 'aprovar',
+        justificativa: observacaoAprovacao
+      });
+      console.log('Solicitação aprovada com sucesso');
+      await carregarSolicitacoes();
+      setModalAprovarAberto(false);
+      setSolicitacaoSelecionada(null);
+      setObservacaoAprovacao('');
+      alert('Solicitação aprovada com sucesso!');
+    } catch (error) {
+      console.error('Erro ao aprovar solicitação:', error);
+      let errorMessage = 'Erro ao aprovar solicitação.';
+      if (error.response?.data?.message) {
+        errorMessage = error.response.data.message;
       }
-      return s;
-    });
-
-    setSolicitacoes(solicitacoesAtualizadas);
-    localStorage.setItem('ajustePontoSolicitacoes', JSON.stringify(solicitacoesAtualizadas));
-
-    // Notificar funcionário
-    const notificacoes = JSON.parse(localStorage.getItem('userNotifications') || '[]');
-    notificacoes.push({
-      id: Date.now(),
-      userId: solicitacaoSelecionada.funcionarioId,
-      message: `Sua solicitação de ajuste de ponto para ${solicitacaoSelecionada.data} foi aprovada. ${
-        observacaoAprovacao ? `Observação: ${observacaoAprovacao}` : ''
-      }`,
-      date: new Date().toLocaleDateString('pt-BR'),
-      read: false
-    });
-    localStorage.setItem('userNotifications', JSON.stringify(notificacoes));
-
-    // Atualizar registro de ponto
-    const timeEntries = JSON.parse(localStorage.getItem('timeEntries') || '[]');
-    const updatedTimeEntries = timeEntries.map(entry => {
-      if (entry.employeeId === solicitacaoSelecionada.funcionarioId && 
-          entry.date === solicitacaoSelecionada.data && 
-          entry.type === solicitacaoSelecionada.tipoRegistro) {
-        return {
-          ...entry,
-          time: solicitacaoSelecionada.horaCorreta,
-          status: 'aprovado',
-          justificativaAdmin: observacaoAprovacao
-        };
-      }
-      return entry;
-    });
-    localStorage.setItem('timeEntries', JSON.stringify(updatedTimeEntries));
-
-    setModalAprovarAberto(false);
-    setSolicitacaoSelecionada(null);
-    setObservacaoAprovacao('');
-
-    alert('Solicitação aprovada com sucesso!');
+      alert(errorMessage);
+    } finally {
+      setProcessandoDecisao(false);
+    }
   };
-
-  const rejeitarSolicitacao = () => {
-    if (!solicitacaoSelecionada) return;
-
-    const solicitacoesAtualizadas = solicitacoes.map(s => {
-      if (s.id === solicitacaoSelecionada.id) {
-        return {
-          ...s,
-          status: 'rejeitado',
-          dataDecisao: new Date().toLocaleDateString('pt-BR'),
-          observacao: observacaoRejeicao,
-          justificativaAdmin: observacaoRejeicao
-        };
+  
+  const rejeitarSolicitacao = async () => {
+    if (!solicitacaoSelecionada || processandoDecisao) return;
+    if (!observacaoRejeicao.trim()) {
+      alert('Por favor, informe o motivo da rejeição.');
+      return;
+    }
+    try {
+      setProcessandoDecisao(true);
+      await api.put(`/ajustes-ponto/${solicitacaoSelecionada.id}/decisao`, {
+        decisao: 'rejeitar',
+        justificativa: observacaoRejeicao
+      });
+      console.log('Solicitação rejeitada com sucesso');
+      await carregarSolicitacoes();
+      setModalRejeitarAberto(false);
+      setSolicitacaoSelecionada(null);
+      setObservacaoRejeicao('');
+      alert('Solicitação rejeitada.');
+    } catch (error) {
+      console.error('Erro ao rejeitar solicitação:', error);
+      let errorMessage = 'Erro ao rejeitar solicitação.';
+      if (error.response?.data?.message) {
+        errorMessage = error.response.data.message;
       }
-      return s;
-    });
-
-    setSolicitacoes(solicitacoesAtualizadas);
-    localStorage.setItem('ajustePontoSolicitacoes', JSON.stringify(solicitacoesAtualizadas));
-
-    // Notificar funcionário
-    const notificacoes = JSON.parse(localStorage.getItem('userNotifications') || '[]');
-    notificacoes.push({
-      id: Date.now(),
-      userId: solicitacaoSelecionada.funcionarioId,
-      message: `Sua solicitação de ajuste de ponto para ${solicitacaoSelecionada.data} foi rejeitada. 
-                Motivo: ${observacaoRejeicao}`,
-      date: new Date().toLocaleDateString('pt-BR'),
-      read: false
-    });
-    localStorage.setItem('userNotifications', JSON.stringify(notificacoes));
-
-    setModalRejeitarAberto(false);
-    setSolicitacaoSelecionada(null);
-    setObservacaoRejeicao('');
-
-    alert('Solicitação rejeitada.');
+      alert(errorMessage);
+    } finally {
+      setProcessandoDecisao(false);
+    }
   };
-
+  
   // Funções de renderização
   const renderizarStatus = (status) => {
     const statusColors = {
+      PENDENTE: 'bg-yellow-600',
+      APROVADO: 'bg-green-600',
+      REJEITADO: 'bg-red-600',
       pendente: 'bg-yellow-600',
       aprovado: 'bg-green-600',
       rejeitado: 'bg-red-600',
       default: 'bg-gray-600'
     };
-    
+    const statusText = status.toLowerCase();
     return (
       <span className={`inline-block px-2 py-1 rounded-full text-xs ${statusColors[status] || statusColors.default}`}>
-        {status.toUpperCase()}
+        {statusText.toUpperCase()}
       </span>
     );
   };
-
-  // Filtrar e ordenar solicitações
-  const solicitacoesFiltradas = solicitacoes.filter(solicitacao => {
-    const matchStatus = filtros.status === '' || solicitacao.status === filtros.status;
-    const matchFuncionario = filtros.funcionario === '' || solicitacao.funcionarioNome === filtros.funcionario;
-    
-    let matchPeriodo = true;
-    if (filtros.periodo === 'hoje') {
-      matchPeriodo = solicitacao.data === new Date().toLocaleDateString('pt-BR');
-    } else if (filtros.periodo === 'semana') {
-      const hoje = new Date();
-      const dataLimite = new Date();
-      dataLimite.setDate(hoje.getDate() - 7);
-      
-      const [dia, mes, ano] = solicitacao.data.split('/').map(Number);
-      const dataSolicitacao = new Date(ano, mes - 1, dia);
-      
-      matchPeriodo = dataSolicitacao >= dataLimite;
+  
+  const formatarData = (dataString) => {
+    if (!dataString) return '';
+    if (dataString.includes('T')) {
+      const date = new Date(dataString);
+      return date.toLocaleDateString('pt-BR');
     }
-    
-    return matchStatus && matchFuncionario && matchPeriodo;
-  });
-
-  const solicitacoesOrdenadas = [...solicitacoesFiltradas].sort((a, b) => {
-    const [diaA, mesA, anoA] = a.dataSolicitacao.split('/').map(Number);
-    const [diaB, mesB, anoB] = b.dataSolicitacao.split('/').map(Number);
-    
-    const dateA = new Date(anoA, mesA - 1, diaA);
-    const dateB = new Date(anoB, mesB - 1, diaB);
-    
-    return dateB - dateA;
-  });
-
-  // Renderização do componente
+    return dataString;
+  };
+  
+  const formatarDataHora = (dataString) => {
+    if (!dataString) return '';
+    if (dataString.includes('T')) {
+      const date = new Date(dataString);
+      return date.toLocaleString('pt-BR');
+    }
+    return dataString;
+  };
+  
+  if (loading) {
+    return (
+      <div className="bg-purple-800 bg-opacity-40 backdrop-blur-sm rounded-lg shadow-lg p-6">
+        <div className="flex items-center justify-center py-8">
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-purple-400 mr-3"></div>
+          <span>Carregando ajustes de ponto...</span>
+        </div>
+      </div>
+    );
+  }
+  
   return (
     <div className="bg-purple-800 bg-opacity-40 backdrop-blur-sm rounded-lg shadow-lg p-6">
       <h1 className="text-2xl font-bold mb-6">Ajustes de Ponto</h1>
+      {/* Removemos a exibição do error como alerta principal */}
       
-      {/* Filtros */}
+      {/* Filtros com Axios */}
       <div className="bg-purple-900 bg-opacity-40 rounded-lg p-4 mb-6">
         <h2 className="text-xl font-semibold mb-4">Filtros</h2>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
           <div>
             <label className="block text-sm text-purple-300 mb-1">Status</label>
-            <select 
+            <select
               className="w-full bg-purple-800 border border-purple-700 rounded-md p-2 text-white"
               value={filtros.status}
-              onChange={(e) => setFiltros({...filtros, status: e.target.value})}
+              onChange={(e) => aplicarFiltros({ status: e.target.value })}
             >
               <option value="">Todos os status</option>
               <option value="pendente">Pendente</option>
@@ -273,30 +277,32 @@ const AjustesPontoTab = () => {
               <option value="rejeitado">Rejeitado</option>
             </select>
           </div>
-          
           <div>
             <label className="block text-sm text-purple-300 mb-1">Funcionário</label>
-            <select 
+            <select
               className="w-full bg-purple-800 border border-purple-700 rounded-md p-2 text-white"
-              value={filtros.funcionario}
-              onChange={(e) => setFiltros({...filtros, funcionario: e.target.value})}
+              value={filtros.funcionarioId}
+              onChange={(e) => {
+                const funcionarioId = e.target.value;
+                const funcionario = funcionariosUnicos.find(f => f.id.toString() === funcionarioId);
+                aplicarFiltros({
+                  funcionarioId: funcionarioId,
+                  funcionario: funcionario ? funcionario.nome : ''
+                });
+              }}
             >
               <option value="">Todos os funcionários</option>
-              {[...new Set([
-                ...allFuncionarios.map(f => f.nome),
-                ...solicitacoes.map(s => s.funcionarioNome)
-              ])].filter(Boolean).sort().map((nome, index) => (
-                <option key={index} value={nome}>{nome}</option>
+              {funcionariosUnicos.map((func) => (
+                <option key={func.id} value={func.id}>{func.nome}</option>
               ))}
             </select>
           </div>
-          
           <div>
             <label className="block text-sm text-purple-300 mb-1">Período</label>
-            <select 
+            <select
               className="w-full bg-purple-800 border border-purple-700 rounded-md p-2 text-white"
               value={filtros.periodo}
-              onChange={(e) => setFiltros({...filtros, periodo: e.target.value})}
+              onChange={(e) => aplicarFiltros({ periodo: e.target.value })}
             >
               <option value="">Todos os períodos</option>
               <option value="hoje">Hoje</option>
@@ -304,10 +310,28 @@ const AjustesPontoTab = () => {
               <option value="mes">Este mês</option>
             </select>
           </div>
+          <div className="flex items-end">
+            <button
+              onClick={limparFiltros}
+              className="w-full bg-purple-600 hover:bg-purple-700 text-white font-medium py-2 px-4 rounded-md transition duration-200"
+            >
+              Limpar Filtros
+            </button>
+          </div>
         </div>
       </div>
-      
-      {/* Tabela de Solicitações */}
+      <div className="mb-4 flex justify-between items-center">
+        <div className="text-sm text-purple-300">
+          {solicitacoes.length} solicitação(ões) encontrada(s)
+        </div>
+        <button
+          onClick={carregarSolicitacoes}
+          disabled={loading}
+          className="bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white font-medium py-2 px-4 rounded-md transition duration-200"
+        >
+          {loading ? 'Carregando...' : 'Recarregar'}
+        </button>
+      </div>
       <div>
         <h2 className="text-xl font-semibold mb-4">Solicitações de Ajuste</h2>
         <div className="overflow-x-auto">
@@ -321,78 +345,94 @@ const AjustesPontoTab = () => {
                 <th className="px-4 py-2 text-left">Solicitado</th>
                 <th className="px-4 py-2 text-left">Motivo</th>
                 <th className="px-4 py-2 text-left">Status</th>
+                <th className="px-4 py-2 text-left">Solicitado em</th>
                 <th className="px-4 py-2 text-left">Ações</th>
               </tr>
             </thead>
             <tbody>
-              {solicitacoesOrdenadas.map((solicitacao) => (
-                <tr key={solicitacao.id} className="border-b border-purple-700 hover:bg-purple-700 hover:bg-opacity-30">
-                  <td className="px-4 py-3">{solicitacao.funcionarioNome}</td>
-                  <td className="px-4 py-3">{solicitacao.data}</td>
-                  <td className="px-4 py-3 capitalize">{solicitacao.tipoRegistro}</td>
-                  <td className="px-4 py-3">{solicitacao.horaOriginal}</td>
-                  <td className="px-4 py-3">{solicitacao.horaCorreta}</td>
-                  <td className="px-4 py-3">
-                    <div className="truncate max-w-xs" title={solicitacao.motivo}>
-                      {solicitacao.motivo}
-                    </div>
-                  </td>
-                  <td className="px-4 py-3">
-                    {renderizarStatus(solicitacao.status)}
-                    {solicitacao.justificativaAdmin && (
-                      <span 
-                        className="ml-2 text-xs text-purple-300 cursor-help"
-                        title={solicitacao.justificativaAdmin}
-                      >
-                        ℹ️
-                      </span>
-                    )}
-                  </td>
-                  <td className="px-4 py-3">
-                    {solicitacao.status === 'pendente' ? (
-                      <div className="flex space-x-2">
-                        <button 
-                          onClick={() => abrirModalAprovar(solicitacao)}
-                          className="bg-green-600 hover:bg-green-700 text-white text-xs px-2 py-1 rounded"
-                        >
-                          Aprovar
-                        </button>
-                        <button 
-                          onClick={() => {
-                            setSolicitacaoSelecionada(solicitacao);
-                            setModalRejeitarAberto(true);
-                          }}
-                          className="bg-red-600 hover:bg-red-700 text-white text-xs px-2 py-1 rounded"
-                        >
-                          Rejeitar
-                        </button>
-                      </div>
-                    ) : (
-                      <div>
-                        {solicitacao.justificativaAdmin && (
-                          <div className="text-xs text-purple-300 mt-1" title={solicitacao.justificativaAdmin}>
-                            {solicitacao.justificativaAdmin.length > 20 
-                              ? solicitacao.justificativaAdmin.substring(0, 20) + '...' 
-                              : solicitacao.justificativaAdmin
-                            }
-                          </div>
-                        )}
-                        {solicitacao.dataDecisao && (
-                          <div className="text-xs text-purple-300">
-                            Decidido em: {solicitacao.dataDecisao}
-                          </div>
-                        )}
-                      </div>
-                    )}
+              {solicitacoes.length === 0 ? (
+                <tr>
+                  <td colSpan="9" className="px-4 py-8 text-center text-purple-300">
+                    {loading ? 'Carregando...' : 'Nenhuma solicitação encontrada'}
                   </td>
                 </tr>
-              ))}
+              ) : (
+                solicitacoes.map((solicitacao) => (
+                  <tr key={solicitacao.id} className="border-b border-purple-700 hover:bg-purple-700 hover:bg-opacity-30">
+                    <td className="px-4 py-3">{solicitacao.funcionarioNome}</td>
+                    <td className="px-4 py-3">{formatarData(solicitacao.dataPonto)}</td>
+                    <td className="px-4 py-3 capitalize">{solicitacao.tipoRegistro}</td>
+                    <td className="px-4 py-3">{solicitacao.horaOriginal}</td>
+                    <td className="px-4 py-3">{solicitacao.horaCorreta}</td>
+                    <td className="px-4 py-3">
+                      <div className="truncate max-w-xs" title={solicitacao.motivo}>
+                        {solicitacao.motivo}
+                      </div>
+                    </td>
+                    <td className="px-4 py-3">
+                      {renderizarStatus(solicitacao.status)}
+                      {solicitacao.justificativaAdmin && (
+                        <span
+                          className="ml-2 text-xs text-purple-300 cursor-help"
+                          title={solicitacao.justificativaAdmin}
+                        >
+                          ℹ️
+                        </span>
+                      )}
+                    </td>
+                    <td className="px-4 py-3 text-xs text-purple-300">
+                      {formatarDataHora(solicitacao.dataSolicitacao)}
+                    </td>
+                    <td className="px-4 py-3">
+                      {(solicitacao.status === 'PENDENTE' || solicitacao.status === 'pendente') ? (
+                        <div className="flex space-x-2">
+                          {/* Botão Aprovar - com Axios */}
+                          <button
+                            onClick={() => abrirModalAprovar(solicitacao)}
+                            disabled={processandoDecisao}
+                            className="bg-green-600 hover:bg-green-700 disabled:opacity-50 text-white text-xs px-2 py-1 rounded transition duration-200"
+                          >
+                            Aprovar
+                          </button>
+                          {/* Botão Rejeitar - com Axios */}
+                          <button
+                            onClick={() => {
+                              setSolicitacaoSelecionada(solicitacao);
+                              setObservacaoRejeicao('');
+                              setModalRejeitarAberto(true);
+                            }}
+                            disabled={processandoDecisao}
+                            className="bg-red-600 hover:bg-red-700 disabled:opacity-50 text-white text-xs px-2 py-1 rounded transition duration-200"
+                          >
+                            Rejeitar
+                          </button>
+                        </div>
+                      ) : (
+                        <div>
+                          {solicitacao.justificativaAdmin && (
+                            <div className="text-xs text-purple-300 mt-1" title={solicitacao.justificativaAdmin}>
+                              {solicitacao.justificativaAdmin.length > 20
+                                ? solicitacao.justificativaAdmin.substring(0, 20) + '...'
+                                : solicitacao.justificativaAdmin
+                              }
+                            </div>
+                          )}
+                          {solicitacao.dataDecisao && (
+                            <div className="text-xs text-purple-300">
+                              Decidido em: {formatarDataHora(solicitacao.dataDecisao)}
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </td>
+                  </tr>
+                ))
+              )}
             </tbody>
           </table>
         </div>
       </div>
-
-      {/* Modal de Aprovação */}
+      {/* Modal de Aprovação - com Axios */}
       {modalAprovarAberto && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
           <div className="bg-purple-900 rounded-lg shadow-xl p-6 w-full max-w-md">
@@ -402,7 +442,7 @@ const AjustesPontoTab = () => {
                 <span className="text-purple-300">Funcionário:</span> {solicitacaoSelecionada?.funcionarioNome}
               </p>
               <p className="text-sm">
-                <span className="text-purple-300">Data:</span> {solicitacaoSelecionada?.data}
+                <span className="text-purple-300">Data:</span> {formatarData(solicitacaoSelecionada?.dataPonto)}
               </p>
               <p className="text-sm">
                 <span className="text-purple-300">Alteração:</span> {solicitacaoSelecionada?.horaOriginal} → {solicitacaoSelecionada?.horaCorreta}
@@ -411,39 +451,51 @@ const AjustesPontoTab = () => {
                 <span className="text-purple-300">Motivo:</span> {solicitacaoSelecionada?.motivo}
               </p>
             </div>
+            {/* Campo de observação com Axios */}
             <div className="mb-4">
               <label className="block text-sm text-purple-300 mb-1">Observações da aprovação</label>
-              <textarea 
-                className="w-full bg-purple-800 border border-purple-700 rounded-md p-2 text-white"
+              <textarea
+                className="w-full bg-purple-800 border border-purple-700 rounded-md p-2 text-white focus:outline-none focus:ring-2 focus:ring-purple-400"
                 value={observacaoAprovacao}
                 onChange={(e) => setObservacaoAprovacao(e.target.value)}
                 rows={3}
                 placeholder="Adicione uma observação (opcional)"
-              ></textarea>
+                disabled={processandoDecisao}
+              />
             </div>
             <div className="flex justify-end space-x-2">
-              <button 
+              {/* Botão Cancelar */}
+              <button
                 onClick={() => {
                   setModalAprovarAberto(false);
                   setSolicitacaoSelecionada(null);
                   setObservacaoAprovacao('');
                 }}
-                className="bg-gray-600 hover:bg-gray-700 text-white font-medium py-2 px-4 rounded"
+                disabled={processandoDecisao}
+                className="bg-gray-600 hover:bg-gray-700 disabled:opacity-50 text-white font-medium py-2 px-4 rounded transition duration-200"
               >
                 Cancelar
               </button>
-              <button 
+              {/* Botão Confirmar Aprovação - com Axios */}
+              <button
                 onClick={aprovarSolicitacao}
-                className="bg-green-600 hover:bg-green-700 text-white font-medium py-2 px-4 rounded"
+                disabled={processandoDecisao}
+                className="bg-green-600 hover:bg-green-700 disabled:opacity-50 text-white font-medium py-2 px-4 rounded transition duration-200"
               >
-                Confirmar Aprovação
+                {processandoDecisao ? (
+                  <span className="flex items-center">
+                    <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+                    Aprovando...
+                  </span>
+                ) : (
+                  'Confirmar Aprovação'
+                )}
               </button>
             </div>
           </div>
         </div>
       )}
-
-      {/* Modal de Rejeição */}
+      {/* Modal de Rejeição - com Axios */}
       {modalRejeitarAberto && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
           <div className="bg-purple-900 rounded-lg shadow-xl p-6 w-full max-w-md">
@@ -451,34 +503,48 @@ const AjustesPontoTab = () => {
             <p className="mb-4">
               Você está rejeitando a solicitação de ajuste de ponto de{' '}
               <strong>{solicitacaoSelecionada?.funcionarioNome}</strong> para o dia{' '}
-              <strong>{solicitacaoSelecionada?.data}</strong>.
+              <strong>{formatarData(solicitacaoSelecionada?.dataPonto)}</strong>.
             </p>
+            {/* Campo de motivo da rejeição com Axios */}
             <div className="mb-4">
-              <label className="block text-sm text-purple-300 mb-1">Motivo da rejeição</label>
-              <textarea 
-                className="w-full bg-purple-800 border border-purple-700 rounded-md p-2 text-white"
+              <label className="block text-sm text-purple-300 mb-1">Motivo da rejeição *</label>
+              <textarea
+                className="w-full bg-purple-800 border border-purple-700 rounded-md p-2 text-white focus:outline-none focus:ring-2 focus:ring-purple-400"
                 value={observacaoRejeicao}
                 onChange={(e) => setObservacaoRejeicao(e.target.value)}
                 rows={3}
                 placeholder="Informe o motivo da rejeição"
-              ></textarea>
+                disabled={processandoDecisao}
+                required
+              />
             </div>
             <div className="flex justify-end space-x-2">
-              <button 
+              {/* Botão Cancelar */}
+              <button
                 onClick={() => {
                   setModalRejeitarAberto(false);
                   setSolicitacaoSelecionada(null);
                   setObservacaoRejeicao('');
                 }}
-                className="bg-gray-600 hover:bg-gray-700 text-white font-medium py-2 px-4 rounded"
+                disabled={processandoDecisao}
+                className="bg-gray-600 hover:bg-gray-700 disabled:opacity-50 text-white font-medium py-2 px-4 rounded transition duration-200"
               >
                 Cancelar
               </button>
-              <button 
+              {/* Botão Confirmar Rejeição - com Axios */}
+              <button
                 onClick={rejeitarSolicitacao}
-                className="bg-red-600 hover:bg-red-700 text-white font-medium py-2 px-4 rounded"
+                disabled={processandoDecisao || !observacaoRejeicao.trim()}
+                className="bg-red-600 hover:bg-red-700 disabled:opacity-50 text-white font-medium py-2 px-4 rounded transition duration-200"
               >
-                Confirmar Rejeição
+                {processandoDecisao ? (
+                  <span className="flex items-center">
+                    <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+                    Rejeitando...
+                  </span>
+                ) : (
+                  'Confirmar Rejeição'
+                )}
               </button>
             </div>
           </div>

@@ -1,41 +1,69 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useUser } from '../context/UserContext'; // Importando o hook do contexto
-// Padronize assim em todos os arquivos
-const FUNCIONARIOS_KEY = 'sistema_funcionarios';
+import axios from 'axios';
 
 const LoginRegisterPage = () => {
   const [isLogin, setIsLogin] = useState(true);
   const [formData, setFormData] = useState({
+    username: '',
     email: '',
     password: '',
     confirmPassword: '',
-    name: ''
+    name: '',
+    cargo: '',
+    departamento: ''
   });
   const [errorMessage, setErrorMessage] = useState('');
   const [successMessage, setSuccessMessage] = useState('');
   const [loading, setLoading] = useState(false);
-  
   const navigate = useNavigate();
-  const { login, addFuncionario, refreshFuncionarios, funcionarios } = useUser(); // Usando o hook do contexto
 
-  // Verificar se o usuário já está autenticado
+  // Configuração da API
+  const api = axios.create({
+    baseURL: 'http://localhost:8080/api',
+    headers: {
+      'Content-Type': 'application/json'
+    }
+  });
+
+  // ✅ FUNÇÃO PARA DETERMINAR SE É ADMIN
+  const isUserAdmin = (userData) => {
+    return (
+      userData.roles?.some(role => role === 'ROLE_ADMIN' || role === 'ADMIN') ||
+      userData.email === 'admin@cuidaemprego.com' ||
+      userData.username === 'admin'
+    );
+  };
+
+  // ✅ FUNÇÃO PARA FAZER REDIRECIONAMENTO CORRETO
+  const redirectUser = (userData) => {
+    const isAdmin = isUserAdmin(userData);
+    
+    console.log('🎯 Redirecionamento:', {
+      nome: userData.name,
+      isAdmin,
+      roles: userData.roles
+    });
+
+    if (isAdmin) {
+      console.log('👑 Admin detectado - redirecionando para /admin');
+      navigate('/admin');
+    } else {
+      console.log('👤 Funcionário detectado - redirecionando para /dashboard');
+      navigate('/dashboard');
+    }
+  };
+
+  // Verificar se já está logado
   useEffect(() => {
+    const token = localStorage.getItem('token');
     const user = JSON.parse(localStorage.getItem('user') || '{}');
-    if (user.authenticated) {
-      if (user.roles && user.roles.includes('ADMIN')) {
-        navigate('/admin');
-      } else {
-        navigate('/dashboard');
-      }
+    
+    if (token && user.authenticated) {
+      console.log('🔄 Usuário já autenticado, redirecionando...');
+      redirectUser(user);
     }
   }, [navigate]);
-
-  // Atualizar lista de funcionários quando o componente é montado
-  useEffect(() => {
-    refreshFuncionarios();
-    console.log("LoginRegisterPage - Lista atual de funcionários:", funcionarios);
-  }, [refreshFuncionarios, funcionarios]);
 
   const handleChange = (e) => {
     setFormData({
@@ -50,176 +78,81 @@ const LoginRegisterPage = () => {
     setSuccessMessage('');
     setLoading(true);
 
-    if (!isLogin && formData.password !== formData.confirmPassword) {
-      setErrorMessage('As senhas não coincidem!');
-      setLoading(false);
-      return;
-    }
-
     try {
       if (isLogin) {
-        // Processo de login
-        console.log("Tentando login com:", formData.email);
+        // ✅ PROCESSO DE LOGIN
+        console.log('🔐 Tentativa de login com:', formData.username);
         
-        // Verificar se existem usuários registrados
-        const registeredUsers = JSON.parse(localStorage.getItem('registeredUsers') || '[]');
-        
-        // Encontrar o usuário pelo email
-        const user = registeredUsers.find(user => user.email === formData.email);
-        
-        if (!user) {
-          throw { message: 'Email não encontrado. Por favor, faça o registro.' };
-        }
-        
-        // Verificar a senha
-        if (user.password !== formData.password) {
-          throw { message: 'Senha incorreta.' };
-        }
-        
-        // Simular dados como viriam do backend
-        const isMockAdmin = user.email.toLowerCase().includes('admin');
-        
-        const userData = {
-          authenticated: true,
-          id: user.id,
-          email: user.email,
-          name: user.name,
-          roles: isMockAdmin ? ['ADMIN'] : ['FUNCIONARIO'],
-          token: 'mock-jwt-token-123456'
-        };
-        
-        // Armazenar no Context e localStorage
-        login(userData); // Usando a função do contexto
-        localStorage.setItem('token', userData.token);
-        
-        console.log(`Redirecionando para ${isMockAdmin ? '/admin' : '/dashboard'}`);
-        
-        // Atualizar a lista de funcionários antes de redirecionar
-        await refreshFuncionarios();
-        console.log("Lista de funcionários atualizada após login:", 
-          JSON.parse(localStorage.getItem('funcionarios') || '[]'));
-        
-        // Redirecionar conforme a role
-        setLoading(false);
-        if (isMockAdmin) {
-          navigate('/admin');
-        } else {
-          navigate('/dashboard');
-        }
-        
-        /* CÓDIGO REAL PARA INTEGRAÇÃO COM BACKEND - Descomentar quando o backend estiver pronto
-        const response = await axios.post('http://localhost:8080/api/auth/login', {
-          email: formData.email,
+        const response = await api.post('/auth/signin', {
+          username: formData.username,
           password: formData.password
         });
+
+        const data = response.data;
+        console.log('📦 Resposta do login:', data);
+
+        // ✅ SALVAR DADOS DO USUÁRIO
+        const isAdmin = isUserAdmin(data);
         
-        console.log("Resposta do login:", response.data);
-        
-        // Armazenar dados no Context
-        login(response.data);
-        localStorage.setItem('token', response.data.token);
-        
-        // Atualizar a lista de funcionários antes de redirecionar
-        await refreshFuncionarios();
-        
-        // Redirecionar conforme o papel do usuário
-        if (response.data.roles && response.data.roles.includes('ADMIN')) {
-          navigate('/admin');
-        } else {
-          navigate('/dashboard');
-        }
-        */
-        
+        const userData = {
+          id: data.id,
+          username: data.username,
+          name: data.name, // ✅ Nome real do usuário
+          email: data.email,
+          cargo: data.cargo,
+          departamento: data.departamento,
+          roles: data.roles,
+          isAdmin: isAdmin,
+          authenticated: true
+        };
+
+        // Salvar no localStorage
+        localStorage.setItem('token', data.accessToken);
+        localStorage.setItem('user', JSON.stringify(userData));
+
+        console.log('💾 Dados salvos:', userData);
+
+        // ✅ REDIRECIONAMENTO BASEADO NO TIPO DE USUÁRIO
+        redirectUser(userData);
+
       } else {
-        // Processo de registro
-        console.log("Registrando usuário:", formData);
-        
-        // Verificar se já existem usuários registrados
-        const registeredUsers = JSON.parse(localStorage.getItem('registeredUsers') || '[]');
-        
-        // Verificar se o email já está em uso
-        if (registeredUsers.some(user => user.email === formData.email)) {
-          throw { message: 'Este email já está em uso.' };
+        // ✅ PROCESSO DE CADASTRO
+        if (formData.password !== formData.confirmPassword) {
+          setErrorMessage('As senhas não coincidem!');
+          setLoading(false);
+          return;
         }
-        
-        // Criar novo usuário
-        const newUser = {
-          id: registeredUsers.length + 1,
+
+        const response = await api.post('/auth/signup', {
+          username: formData.username,
           name: formData.name,
           email: formData.email,
           password: formData.password,
-          createdAt: new Date().toISOString()
-        };
-        
-        // Adicionar à lista de usuários registrados
-        registeredUsers.push(newUser);
-        localStorage.setItem('registeredUsers', JSON.stringify(registeredUsers));
-        
-        // Adicionar também à lista de funcionários (para caixas de seleção)
-        const novoFuncionario = {
-          id: newUser.id,
-          nome: newUser.name
-        };
-        
-        console.log("Adicionando novo funcionário:", novoFuncionario);
-        
-        // Usar a função addFuncionario do context com await para garantir conclusão
-        const updatedList = await addFuncionario(novoFuncionario);
-        console.log("Funcionário adicionado, lista atualizada:", updatedList);
-        
-        // Verificar se o funcionário foi realmente adicionado
-        const funcionariosAtuais = JSON.parse(localStorage.getItem('funcionarios') || '[]');
-        console.log("Funcionários atuais no localStorage:", funcionariosAtuais);
-        
-        // Forçar atualização da lista no Context
-        await refreshFuncionarios();
-        
-        setSuccessMessage('Parabéns, você foi cadastrado! Faça login para continuar.');
-        
-        // Esperar alguns segundos e mudar para a tela de login
+          cargo: formData.cargo,
+          departamento: formData.departamento,
+          roles: formData.email.includes('admin') ? ['admin'] : []
+        });
+
+        setSuccessMessage('Cadastro realizado com sucesso! Faça login para acessar.');
         setTimeout(() => {
           setIsLogin(true);
           setSuccessMessage('');
-          // Manter dados para facilitar o login
           setFormData({
-            ...formData,
-            confirmPassword: ''
+            username: formData.username,
+            email: formData.email,
+            password: '',
+            confirmPassword: '',
+            name: '',
+            cargo: '',
+            departamento: ''
           });
         }, 2000);
-        
-        /* CÓDIGO REAL PARA INTEGRAÇÃO COM BACKEND - Descomentar quando o backend estiver pronto
-        const response = await axios.post('http://localhost:8080/api/auth/registro', {
-          email: formData.email,
-          name: formData.name,
-          password: formData.password
-        });
-        
-        // Adicionar à lista de funcionários (para caixas de seleção)
-        const novoFuncionario = {
-          id: response.data.id,
-          nome: formData.name
-        };
-        const updatedList = await addFuncionario(novoFuncionario);
-        console.log("Funcionário adicionado, lista atualizada:", updatedList);
-        
-        // Forçar atualização da lista no Context
-        await refreshFuncionarios();
-        
-        setSuccessMessage('Parabéns, você foi cadastrado! Faça login para continuar.');
-        
-        setTimeout(() => {
-          setIsLogin(true);
-          setSuccessMessage('');
-        }, 2000);
-        */
       }
+
     } catch (error) {
-      console.error('Erro na operação:', error);
-      setErrorMessage(
-        error.message || 
-        error.response?.data?.message || 
-        'Ocorreu um erro. Por favor, tente novamente.'
-      );
+      console.error('❌ Erro:', error);
+      const message = error.response?.data?.message || 'Erro desconhecido';
+      setErrorMessage(message);
     } finally {
       setLoading(false);
     }
@@ -228,10 +161,10 @@ const LoginRegisterPage = () => {
   return (
     <div className="min-h-screen flex flex-col bg-gradient-to-br from-purple-900 to-black">
       {/* Logo */}
-      <div className="flex justify-center mt-10 mb-8">
-        <div className="text-white text-4xl font-bold flex items-center">
-          <span className="bg-purple-600 rounded-full p-2 mr-2">
-            <svg xmlns="http://www.w3.org/2000/svg" className="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+      <div className="flex justify-center mt-16 mb-12">
+        <div className="text-white text-5xl font-bold flex items-center">
+          <span className="bg-purple-600 rounded-full p-3 mr-3">
+            <svg xmlns="http://www.w3.org/2000/svg" className="h-10 w-10" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 13.255A23.931 23.931 0 0112 15c-3.183 0-6.22-.62-9-1.745M16 6V4a2 2 0 00-2-2h-4a2 2 0 00-2 2v2m4 6h.01M5 20h14a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
             </svg>
           </span>
@@ -241,11 +174,14 @@ const LoginRegisterPage = () => {
 
       {/* Card do formulário */}
       <div className="w-full max-w-md mx-auto px-4">
-        <div className="bg-purple-800 bg-opacity-40 backdrop-blur-sm rounded-lg shadow-lg p-6 border border-purple-500">
+        <div className="bg-purple-800 bg-opacity-40 backdrop-blur-sm rounded-xl shadow-2xl p-8 border border-purple-500">
+
           {/* Abas */}
-          <div className="flex mb-6">
-            <button 
-              className={`flex-1 py-2 text-white font-medium rounded-tl-lg rounded-bl-lg ${isLogin ? 'bg-purple-600' : 'bg-purple-900 bg-opacity-50'}`}
+          <div className="flex mb-8">
+            <button
+              className={`flex-1 py-3 text-white font-medium rounded-tl-xl rounded-bl-xl transition-all ${
+                isLogin ? 'bg-purple-600 shadow-lg' : 'bg-purple-900 bg-opacity-50 hover:bg-purple-800'
+              }`}
               onClick={() => {
                 setIsLogin(true);
                 setErrorMessage('');
@@ -254,146 +190,219 @@ const LoginRegisterPage = () => {
             >
               Login
             </button>
-            <button 
-              className={`flex-1 py-2 text-white font-medium rounded-tr-lg rounded-br-lg ${!isLogin ? 'bg-purple-600' : 'bg-purple-900 bg-opacity-50'}`}
+            <button
+              className={`flex-1 py-3 text-white font-medium rounded-tr-xl rounded-br-xl transition-all ${
+                !isLogin ? 'bg-purple-600 shadow-lg' : 'bg-purple-900 bg-opacity-50 hover:bg-purple-800'
+              }`}
               onClick={() => {
                 setIsLogin(false);
                 setErrorMessage('');
                 setSuccessMessage('');
               }}
             >
-              Registro
+              Cadastro
             </button>
           </div>
 
-          {/* Mensagens de feedback */}
+          {/* Mensagens */}
           {errorMessage && (
-            <div className="mb-4 p-3 bg-red-500 bg-opacity-25 border border-red-500 rounded text-white text-sm">
-              {errorMessage}
+            <div className="mb-6 p-4 bg-red-500 bg-opacity-25 border border-red-500 rounded-lg text-white text-sm">
+              <div className="flex items-center">
+                <svg className="w-5 h-5 mr-2" fill="currentColor" viewBox="0 0 20 20">
+                  <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
+                </svg>
+                {errorMessage}
+              </div>
             </div>
           )}
 
           {successMessage && (
-            <div className="mb-4 p-3 bg-green-500 bg-opacity-25 border border-green-500 rounded text-white text-sm">
-              {successMessage}
+            <div className="mb-6 p-4 bg-green-500 bg-opacity-25 border border-green-500 rounded-lg text-white text-sm">
+              <div className="flex items-center">
+                <svg className="w-5 h-5 mr-2" fill="currentColor" viewBox="0 0 20 20">
+                  <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+                </svg>
+                {successMessage}
+              </div>
             </div>
           )}
 
           {/* Formulário */}
-          <form onSubmit={handleSubmit}>
-            {!isLogin && (
-              <div className="mb-4">
-                <label className="block text-white text-sm font-medium mb-2" htmlFor="name">
-                  Nome Completo
-                </label>
-                <input
-                  className="w-full bg-purple-900 bg-opacity-50 text-white border border-purple-500 rounded py-2 px-3 focus:outline-none focus:ring-2 focus:ring-purple-400"
-                  id="name"
-                  name="name"
-                  type="text"
-                  value={formData.name}
-                  onChange={handleChange}
-                  required={!isLogin}
-                />
-              </div>
-            )}
-
-            <div className="mb-4">
-              <label className="block text-white text-sm font-medium mb-2" htmlFor="email">
-                Email
-              </label>
-              <input
-                className="w-full bg-purple-900 bg-opacity-50 text-white border border-purple-500 rounded py-2 px-3 focus:outline-none focus:ring-2 focus:ring-purple-400"
-                id="email"
-                name="email"
-                type="email"
-                value={formData.email}
-                onChange={handleChange}
-                required
-              />
-            </div>
-
-            <div className="mb-4">
-              <label className="block text-white text-sm font-medium mb-2" htmlFor="password">
-                Senha
-              </label>
-              <input
-                className="w-full bg-purple-900 bg-opacity-50 text-white border border-purple-500 rounded py-2 px-3 focus:outline-none focus:ring-2 focus:ring-purple-400"
-                id="password"
-                name="password"
-                type="password"
-                value={formData.password}
-                onChange={handleChange}
-                required
-              />
-            </div>
-
-            {!isLogin && (
-              <div className="mb-6">
-                <label className="block text-white text-sm font-medium mb-2" htmlFor="confirmPassword">
-                  Confirmar Senha
-                </label>
-                <input
-                  className="w-full bg-purple-900 bg-opacity-50 text-white border border-purple-500 rounded py-2 px-3 focus:outline-none focus:ring-2 focus:ring-purple-400"
-                  id="confirmPassword"
-                  name="confirmPassword"
-                  type="password"
-                  value={formData.confirmPassword}
-                  onChange={handleChange}
-                  required={!isLogin}
-                />
-              </div>
-            )}
-
-            <div className="flex items-center justify-between mb-4">
-              {isLogin && (
-                <div className="flex items-center">
-                  <input
-                    id="remember"
-                    name="remember"
-                    type="checkbox"
-                    className="h-4 w-4 text-purple-600 focus:ring-purple-500 border-gray-300 rounded"
-                  />
-                  <label htmlFor="remember" className="ml-2 block text-sm text-white">
-                    Lembrar-me
+          <form onSubmit={handleSubmit} className="space-y-6">
+            
+            {/* Campos do Login */}
+            {isLogin ? (
+              <>
+                <div>
+                  <label className="block text-white text-sm font-medium mb-2">
+                    Nome, Username ou Email
                   </label>
+                  <input
+                    className="w-full bg-purple-900 bg-opacity-50 text-white border border-purple-500 rounded-lg py-3 px-4 focus:outline-none focus:ring-2 focus:ring-purple-400 focus:border-purple-300 transition-all"
+                    name="username"
+                    type="text"
+                    placeholder="Digite seu nome, username ou email"
+                    value={formData.username}
+                    onChange={handleChange}
+                    required
+                  />
                 </div>
-              )}
-              
-              {isLogin && (
-                <div className="text-sm">
-                  <a href="#" className="text-purple-300 hover:text-purple-200">
-                    Esqueceu a senha?
-                  </a>
+
+                <div>
+                  <label className="block text-white text-sm font-medium mb-2">
+                    Senha
+                  </label>
+                  <input
+                    className="w-full bg-purple-900 bg-opacity-50 text-white border border-purple-500 rounded-lg py-3 px-4 focus:outline-none focus:ring-2 focus:ring-purple-400 focus:border-purple-300 transition-all"
+                    name="password"
+                    type="password"
+                    placeholder="••••••••"
+                    value={formData.password}
+                    onChange={handleChange}
+                    required
+                  />
                 </div>
-              )}
-            </div>
+              </>
+            ) : (
+              <>
+                {/* Campos do Cadastro */}
+                <div>
+                  <label className="block text-white text-sm font-medium mb-2">
+                    Nome Completo
+                  </label>
+                  <input
+                    className="w-full bg-purple-900 bg-opacity-50 text-white border border-purple-500 rounded-lg py-3 px-4 focus:outline-none focus:ring-2 focus:ring-purple-400 focus:border-purple-300 transition-all"
+                    name="name"
+                    type="text"
+                    placeholder="Seu nome completo"
+                    value={formData.name}
+                    onChange={handleChange}
+                    required
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-white text-sm font-medium mb-2">
+                    Username
+                  </label>
+                  <input
+                    className="w-full bg-purple-900 bg-opacity-50 text-white border border-purple-500 rounded-lg py-3 px-4 focus:outline-none focus:ring-2 focus:ring-purple-400 focus:border-purple-300 transition-all"
+                    name="username"
+                    type="text"
+                    placeholder="Escolha um username"
+                    value={formData.username}
+                    onChange={handleChange}
+                    required
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-white text-sm font-medium mb-2">
+                    Email
+                  </label>
+                  <input
+                    className="w-full bg-purple-900 bg-opacity-50 text-white border border-purple-500 rounded-lg py-3 px-4 focus:outline-none focus:ring-2 focus:ring-purple-400 focus:border-purple-300 transition-all"
+                    name="email"
+                    type="email"
+                    placeholder="seu@email.com"
+                    value={formData.email}
+                    onChange={handleChange}
+                    required
+                  />
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-white text-sm font-medium mb-2">
+                      Cargo
+                    </label>
+                    <input
+                      className="w-full bg-purple-900 bg-opacity-50 text-white border border-purple-500 rounded-lg py-3 px-4 focus:outline-none focus:ring-2 focus:ring-purple-400 focus:border-purple-300 transition-all"
+                      name="cargo"
+                      type="text"
+                      placeholder="Seu cargo"
+                      value={formData.cargo}
+                      onChange={handleChange}
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-white text-sm font-medium mb-2">
+                      Departamento
+                    </label>
+                    <input
+                      className="w-full bg-purple-900 bg-opacity-50 text-white border border-purple-500 rounded-lg py-3 px-4 focus:outline-none focus:ring-2 focus:ring-purple-400 focus:border-purple-300 transition-all"
+                      name="departamento"
+                      type="text"
+                      placeholder="Departamento"
+                      value={formData.departamento}
+                      onChange={handleChange}
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-white text-sm font-medium mb-2">
+                    Senha
+                  </label>
+                  <input
+                    className="w-full bg-purple-900 bg-opacity-50 text-white border border-purple-500 rounded-lg py-3 px-4 focus:outline-none focus:ring-2 focus:ring-purple-400 focus:border-purple-300 transition-all"
+                    name="password"
+                    type="password"
+                    placeholder="••••••••"
+                    value={formData.password}
+                    onChange={handleChange}
+                    required
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-white text-sm font-medium mb-2">
+                    Confirmar Senha
+                  </label>
+                  <input
+                    className="w-full bg-purple-900 bg-opacity-50 text-white border border-purple-500 rounded-lg py-3 px-4 focus:outline-none focus:ring-2 focus:ring-purple-400 focus:border-purple-300 transition-all"
+                    name="confirmPassword"
+                    type="password"
+                    placeholder="••••••••"
+                    value={formData.confirmPassword}
+                    onChange={handleChange}
+                    required
+                  />
+                </div>
+              </>
+            )}
 
             <button
               type="submit"
               disabled={loading}
-              className={`w-full bg-purple-600 hover:bg-purple-700 text-white font-bold py-2 px-4 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-400 transition duration-200 ease-in-out transform hover:scale-105 shadow-lg ${loading ? 'opacity-70 cursor-not-allowed' : ''}`}
+              className={`w-full bg-purple-700 hover:bg-purple-600 text-white font-bold py-3 px-6 rounded-lg focus:outline-none focus:shadow-outline transition-all ${
+                loading ? 'opacity-50 cursor-not-allowed' : 'hover:shadow-lg transform hover:scale-105'
+              }`}
             >
               {loading ? (
-                <span className="flex items-center justify-center">
+                <div className="flex items-center justify-center">
                   <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
                     <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
                     <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                   </svg>
-                  Processando...
-                </span>
+                  {isLogin ? 'Entrando...' : 'Cadastrando...'}
+                </div>
               ) : (
-                isLogin ? 'Entrar' : 'Registrar'
+                <>
+                  {isLogin ? '🔑 Entrar' : '✨ Cadastrar'}
+                </>
               )}
             </button>
           </form>
         </div>
       </div>
-
-      {/* Decorações */}
-      <div className="absolute top-20 left-10 w-20 h-20 bg-purple-500 rounded-full opacity-10 blur-xl"></div>
-      <div className="absolute bottom-20 right-10 w-32 h-32 bg-purple-400 rounded-full opacity-10 blur-xl"></div>
-      <div className="absolute top-40 right-20 w-16 h-16 bg-purple-300 rounded-full opacity-10 blur-xl"></div>
+      
+      {/* Footer */}
+      <div className="mt-8 text-center text-purple-300 text-sm">
+        <p>Sistema de Controle de Ponto</p>
+        <p className="text-xs mt-1">Desenvolvido com Spring Boot + React</p>
+      </div>
     </div>
   );
 };

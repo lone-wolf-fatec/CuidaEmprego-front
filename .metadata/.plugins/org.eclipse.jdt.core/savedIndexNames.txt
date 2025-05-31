@@ -1,0 +1,4 @@
+INDEX VERSION 1.134+C:\Users\Carlos\Desktop\Psata Gerson Aula\cuidaemprego\.metadata\.plugins\org.eclipse.jdt.core
+3413270776.index
+1865797976.index
+2423040010.index

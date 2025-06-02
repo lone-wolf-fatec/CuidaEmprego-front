@@ -1,690 +1,671 @@
 import React, { useState, useEffect, useRef } from 'react';
-import axios from 'axios';
-
-// Configuração da API
-const API_BASE_URL = 'http://localhost:8080/api';
-
-// Instância do axios configurada
-const api = axios.create({
-  baseURL: API_BASE_URL,
-  timeout: 10000,
-  headers: {
-    'Content-Type': 'application/json'
-  }
-});
-
-
-// Interceptor para tratamento de erros
-api.interceptors.response.use(
-  response => response,
-  error => {
-    console.error('Erro na API:', error);
-    return Promise.reject(error);
-  }
-);
 
 // Constantes para status
 const STATUS_APROVADO = 'aprovado';
 const STATUS_REJEITADO = 'rejeitado';
 const STATUS_PENDENTE = 'pendente';
 const STATUS_AJUSTADO = 'ajustado';
+const FUNCIONARIOS_KEY = 'funcionarios';
 
-// Tipos de justificativa
-const TIPOS_JUSTIFICATIVA = [
-  { id: 'atestado_medico', nome: 'Atestado médico', selecionado: false },
-  { id: 'declaracao_comparecimento', nome: 'Declaração de comparecimento', selecionado: false },
-  { id: 'treinamento_externo', nome: 'Treinamento externo', selecionado: false },
-  { id: 'trabalho_externo', nome: 'Trabalho externo', selecionado: false },
-  { id: 'folga_compensatoria', nome: 'Folga compensatória', selecionado: false },
-  { id: 'feriado', nome: 'Feriado', selecionado: false },
-  { id: 'outro', nome: 'Outro', selecionado: false }
-];
-
-// Modelos de Trabalho - estrutura inicial
-const MODELOS_TRABALHO_INICIAIS = {
+// Modelo de Trabalho
+const MODELOS_TRABALHO = {
   PADRAO: {
-    id: 'PADRAO',
-    codigo: 'PADRAO',
     nome: 'Padrão (8h)',
-    horasEsperadas: 480, // minutos
     registros: [
-      { tipo: 'entrada_trabalho', label: 'Entrada Trabalho', ordem: 1 },
-      { tipo: 'saida_almoco', label: 'Saída Almoço', ordem: 2 },
-      { tipo: 'entrada_almoco', label: 'Retorno Almoço', ordem: 3 },
-      { tipo: 'saida_trabalho', label: 'Saída Trabalho', ordem: 4 }
+      { tipo: 'entrada trabalho', label: 'Entrada Trabalho' },
+      { tipo: 'saída almoço', label: 'Saída Almoço' },
+      { tipo: 'entrada almoço', label: 'Retorno Almoço' },
+      { tipo: 'saída trabalho', label: 'Saída Trabalho' }
     ]
   },
   MEIO_PERIODO: {
-    id: 'MEIO_PERIODO',
-    codigo: 'MEIO_PERIODO', 
     nome: 'Meio Período (4h)',
-    horasEsperadas: 240,
     registros: [
-      { tipo: 'entrada_trabalho', label: 'Entrada', ordem: 1 },
-      { tipo: 'saida_trabalho', label: 'Saída', ordem: 2 }
+      { tipo: 'entrada trabalho', label: 'Entrada' },
+      { tipo: 'saída trabalho', label: 'Saída' }
     ]
   },
   PLANTAO_12H: {
-    id: 'PLANTAO_12H',
-    codigo: 'PLANTAO_12H',
     nome: 'Plantão (12h)',
-    horasEsperadas: 720,
     registros: [
-      { tipo: 'entrada_plantao', label: 'Entrada Plantão', ordem: 1 },
-      { tipo: 'pausa_1', label: 'Intervalo 1', ordem: 2 },
-      { tipo: 'retorno_1', label: 'Retorno 1', ordem: 3 },
-      { tipo: 'pausa_2', label: 'Intervalo 2', ordem: 4 },
-      { tipo: 'retorno_2', label: 'Retorno 2', ordem: 5 },
-      { tipo: 'saida_plantao', label: 'Saída Plantão', ordem: 6 }
+      { tipo: 'entrada plantão', label: 'Entrada Plantão' },
+      { tipo: 'pausa 1', label: 'Intervalo 1' },
+      { tipo: 'retorno 1', label: 'Retorno 1' },
+      { tipo: 'pausa 2', label: 'Intervalo 2' },
+      { tipo: 'retorno 2', label: 'Retorno 2' },
+      { tipo: 'saída plantão', label: 'Saída Plantão' }
     ]
   },
   HOME_OFFICE: {
-    id: 'HOME_OFFICE',
-    codigo: 'HOME_OFFICE',
     nome: 'Home Office',
-    horasEsperadas: 480,
     registros: [
-      { tipo: 'inicio_expediente', label: 'Início Expediente', ordem: 1 },
-      { tipo: 'pausa', label: 'Pausa', ordem: 2 },
-      { tipo: 'retorno', label: 'Retorno', ordem: 3 },
-      { tipo: 'fim_expediente', label: 'Fim Expediente', ordem: 4 }
+      { tipo: 'início expediente', label: 'Início Expediente' },
+      { tipo: 'pausa', label: 'Pausa' },
+      { tipo: 'retorno', label: 'Retorno' },
+      { tipo: 'fim expediente', label: 'Fim Expediente' }
     ]
+  },
+  PERSONALIZADO: {
+    nome: 'Personalizado',
+    registros: [] // Será definido pelo administrador
   }
 };
 
+// Tipos de justificativa
+const TIPOS_JUSTIFICATIVA = [
+  'Atestado médico',
+  'Declaração de comparecimento',
+  'Treinamento externo',
+  'Trabalho externo',
+  'Folga compensatória',
+  'Feriado',
+  'Outro'
+];
 const PontoBatidoFlexivel = () => {
-  // Estados principais
-  const [pontoRegistros, setPontoRegistros] = useState([]);
-  const [allFuncionarios, setAllFuncionarios] = useState([]);
-  const [modelosTrabalho, setModelosTrabalho] = useState(MODELOS_TRABALHO_INICIAIS);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState('');
-
-  // Estados para filtros - TODOS INICIAM VAZIOS (false/'' = "Todos")
-  const [filtros, setFiltros] = useState({
-    data: '', // '' = "Todas as datas"
-    funcionario: '', // '' = "Todos os funcionários" 
-    status: '', // '' = "Todos os status"
-    modeloTrabalho: '' // '' = "Todos os modelos"
-  });
-
-  // Estados para configurações - TODOS INICIAM COMO false
-  const [configPersonalizada, setConfigPersonalizada] = useState({
-    toleranciaAtraso: 15,
-    limiteHoraExtra: 120,
-    enviarAlertaPendencia: false, // false = não selecionado inicialmente
-    permitirJustificativaPosterior: false, // false = não selecionado inicialmente
-    requerGeolocalizacao: false // false = não selecionado inicialmente
-  });
-
-  // Estados para modais e edição
-  const [editandoRegistro, setEditandoRegistro] = useState(null);
-  const [editandoObservacao, setEditandoObservacao] = useState(null);
-  const [mostrarNotificacaoModal, setMostrarNotificacaoModal] = useState(false);
-  const [mostrarJustificativaModal, setMostrarJustificativaModal] = useState(false);
-  const [mostrarConfigRegrasModal, setMostrarConfigRegrasModal] = useState(false);
-  const [mostrarAdicionarRegistroModal, setMostrarAdicionarRegistroModal] = useState(false);
-
-  // Estados para dados de modais
-  const [funcionarioSelecionado, setFuncionarioSelecionado] = useState(null);
-  const [notificacaoPersonalizada, setNotificacaoPersonalizada] = useState('');
-  
-  // Estado para justificativa - tipos iniciam como false (não selecionados)
-  const [justificativaData, setJustificativaData] = useState({
-    tipo: '', // '' = nenhum tipo selecionado inicialmente
-    detalhamento: '',
-    temComprovante: false, // false = não selecionado inicialmente
-    registroId: null
-  });
-
-  // Estado para novo registro - campos vazios inicialmente
-  const [novoRegistroData, setNovoRegistroData] = useState({
-    funcionarioId: '', // '' = "Selecione um funcionário"
-    data: new Date().toLocaleDateString('pt-BR'),
-    modeloTrabalho: '' // '' = "Selecione um modelo"
-  });
-
-  // Estados para UI
-  const [modoVisualizacao, setModoVisualizacao] = useState('lista');
-  const [exportandoPdf, setExportandoPdf] = useState(false);
-
-  // Refs
-  const horaInputRefs = useRef({});
-  const observacaoInputRef = useRef(null);
-
-// Serviços da API
-  const pontoService = {
-    // Buscar todos os registros com filtros
-    buscarRegistros: async (filtros = {}) => {
-      try {
-        const params = new URLSearchParams();
-        if (filtros.data) params.append('data', filtros.data);
-        if (filtros.funcionario) params.append('funcionario', filtros.funcionario);
-        if (filtros.status) params.append('status', filtros.status);
-        if (filtros.modeloTrabalho) params.append('modeloTrabalho', filtros.modeloTrabalho);
+  // Estados para dados principais
+  const [pontoRegistros, setPontoRegistros] = useState(() => {
+    const storedRegistros = localStorage.getItem('pontoRegistros');
+    const registrosBase = storedRegistros ? JSON.parse(storedRegistros) : [];
+    
+    // Se não houver registros, criar exemplos para demonstração
+    if (registrosBase.length === 0) {
+      return [
+        {
+          id: 1,
+          funcionarioId: 101,
+          funcionarioNome: 'João Silva',
+          data: '19/03/2025',
+          modeloTrabalho: 'PADRAO',
+          registros: MODELOS_TRABALHO.PADRAO.registros.map(r => ({
+            tipo: r.tipo,
+            label: r.label,
+            hora: r.tipo === 'saída trabalho' ? '--:--' : getRandomHour(r.tipo),
+            status: r.tipo === 'saída trabalho' ? STATUS_PENDENTE : 'regular',
+            localizacao: 'Escritório Central'
+          })),
+          bancoHoras: 0, // em minutos
+          observacoes: ''
+        },
+        {
+          id: 2,
+          funcionarioId: 102,
+          funcionarioNome: 'Maria Oliveira',
+          data: '19/03/2025',
+          modeloTrabalho: 'HOME_OFFICE',
+          registros: MODELOS_TRABALHO.HOME_OFFICE.registros.map(r => ({
+            tipo: r.tipo,
+            label: r.label,
+            hora: getRandomHour(r.tipo),
+            status: 'regular',
+            localizacao: 'Home Office - Verificado',
+          })),
+          bancoHoras: 45, // 45 minutos positivos
+          observacoes: 'Trabalho em projeto especial'
+        },
+        {
+          id: 3,
+          funcionarioId: 103,
+          funcionarioNome: 'Carlos Pereira',
+          data: '19/03/2025',
+          modeloTrabalho: 'PLANTAO_12H',
+          registros: MODELOS_TRABALHO.PLANTAO_12H.registros.map(r => ({
+            tipo: r.tipo,
+            label: r.label,
+            hora: getRandomHour(r.tipo),
+            status: r.tipo.includes('saída') ? 'hora extra' : 'regular',
+            localizacao: 'Unidade Norte'
+          })),
+          bancoHoras: 120, // 2 horas positivas
+          observacoes: 'Cobertura de plantão emergencial'
+        },
+        {
+          id: 4,
+          funcionarioId: 104,
+          funcionarioNome: 'Ana Souza',
+          data: '19/03/2025',
+          modeloTrabalho: 'MEIO_PERIODO',
+          registros: MODELOS_TRABALHO.MEIO_PERIODO.registros.map(r => ({
+            tipo: r.tipo,
+            label: r.label,
+            hora: '--:--',
+            status: STATUS_PENDENTE,
+            localizacao: ''
+          })),
+          bancoHoras: 0,
+          observacoes: ''
+        }
+      ];
+    }
+    
+    // Restaurar status salvos em chaves individuais e converter registros antigos para novo formato
+    return registrosBase.map(registro => {
+      // Verificar se o registro já está no novo formato
+      if (registro.modeloTrabalho) {
+        const registrosAtualizados = registro.registros.map((r, indice) => {
+          const statusKey = `pontoStatus_${registro.id}_${indice}`;
+          const statusSalvo = localStorage.getItem(statusKey);
+          
+          if (statusSalvo) {
+            return { ...r, status: statusSalvo };
+          }
+          
+          return r;
+        });
         
-        const response = await api.get(`/ponto/registros?${params}`);
-        return response.data;
-      } catch (error) {
-        console.error('Erro ao buscar registros:', error);
-        throw error;
-      }
-    },
-
-    // Criar novo registro
-    criarRegistro: async (dadosRegistro) => {
-      try {
-        const response = await api.post('/ponto/registros', dadosRegistro);
-        return response.data;
-      } catch (error) {
-        console.error('Erro ao criar registro:', error);
-        throw error;
-      }
-    },
-
-    // Atualizar status de um registro específico
-    atualizarStatusRegistro: async (registroId, indiceRegistro, novoStatus, dadosAdicionais = {}) => {
-      try {
-        const response = await api.put(`/ponto/registros/${registroId}/status/${indiceRegistro}`, {
-          status: novoStatus,
-          ...dadosAdicionais
+        return { ...registro, registros: registrosAtualizados };
+      } else {
+        // Converter registro antigo para novo formato
+        const modeloTrabalhoDetectado = detectarModeloTrabalho(registro.registros);
+        const novosRegistros = MODELOS_TRABALHO[modeloTrabalhoDetectado].registros.map((modelo, indice) => {
+          const registroAntigo = registro.registros[indice] || {};
+          const statusKey = `pontoStatus_${registro.id}_${indice}`;
+          const statusSalvo = localStorage.getItem(statusKey);
+          
+          return {
+            tipo: modelo.tipo,
+            label: modelo.label,
+            hora: registroAntigo.hora || '--:--',
+            status: statusSalvo || registroAntigo.status || STATUS_PENDENTE,
+            localizacao: registroAntigo.localizacao || 'Não registrado'
+          };
         });
-        return response.data;
-      } catch (error) {
-        console.error('Erro ao atualizar status:', error);
-        throw error;
-      }
-    },
-
-    // Salvar observação
-    salvarObservacao: async (registroId, observacao) => {
-      try {
-        const response = await api.put(`/ponto/registros/${registroId}/observacao`, {
-          observacao: observacao
-        });
-        return response.data;
-      } catch (error) {
-        console.error('Erro ao salvar observação:', error);
-        throw error;
-      }
-    },
-
-    // Buscar funcionários
-    buscarFuncionarios: async () => {
-      try {
-        const response = await api.get('/funcionarios');
-        return response.data;
-      } catch (error) {
-        console.error('Erro ao buscar funcionários:', error);
-        throw error;
-      }
-    },
-
-    // Buscar modelos de trabalho
-    buscarModelosTrabalho: async () => {
-      try {
-        const response = await api.get('/ponto/modelos-trabalho');
-        return response.data;
-      } catch (error) {
-        console.error('Erro ao buscar modelos de trabalho:', error);
-        return MODELOS_TRABALHO_INICIAIS;
-      }
-    },
-
-    // Enviar notificação
-    enviarNotificacao: async (funcionarioId, mensagem, dadosExtras = {}) => {
-      try {
-        const response = await api.post('/notificacoes/enviar', {
-          funcionarioId,
-          mensagem,
-          ...dadosExtras
-        });
-        return response.data;
-      } catch (error) {
-        console.error('Erro ao enviar notificação:', error);
-        throw error;
-      }
-    },
-
-    // Registrar justificativa
-    registrarJustificativa: async (dadosJustificativa) => {
-      try {
-        const response = await api.post('/ponto/justificativas', dadosJustificativa);
-        return response.data;
-      } catch (error) {
-        console.error('Erro ao registrar justificativa:', error);
-        throw error;
-      }
-    },
-
-    // Buscar configurações
-    buscarConfiguracoes: async () => {
-      try {
-        const response = await api.post('/ponto/configuracoes'); // creio que é POST!
-        return response.data;
-      } catch (error) {
-        console.error('Erro ao buscar configurações:', error);
+        
         return {
-          toleranciaAtraso: 15,
-          limiteHoraExtra: 120,
-          enviarAlertaPendencia: false,
-          permitirJustificativaPosterior: false,
-          requerGeolocalizacao: false
+          ...registro,
+          modeloTrabalho: modeloTrabalhoDetectado,
+          registros: novosRegistros,
+          bancoHoras: 0,
+          observacoes: ''
         };
       }
-    },
+    });
+  });
 
-    // Salvar configurações
-    salvarConfiguracoes: async (configuracoes) => {
-      try {
-        const response = await api.put('/ponto/configuracoes', configuracoes);
-        return response.data;
-      } catch (error) {
-        console.error('Erro ao salvar configurações:', error);
-        throw error;
-      }
-    },
+  // Estados para filtros e UI
+  const [filtros, setFiltros] = useState({
+    data: '',
+    funcionario: '',
+    status: '',
+    modeloTrabalho: ''
+  });
+  
+  const [allFuncionarios, setAllFuncionarios] = useState([]);
+  const [editandoRegistro, setEditandoRegistro] = useState(null);
+  const [editandoObservacao, setEditandoObservacao] = useState(null);
+  const horaInputRefs = useRef({});
+  const observacaoInputRef = useRef(null);
+  
+  // Estados para modais e funcionalidades
+  const [notificacaoPersonalizada, setNotificacaoPersonalizada] = useState('');
+  const [mostrarNotificacaoModal, setMostrarNotificacaoModal] = useState(false);
+  const [funcionarioSelecionado, setFuncionarioSelecionado] = useState(null);
+  
+  const [mostrarJustificativaModal, setMostrarJustificativaModal] = useState(false);
+  const [justificativaData, setJustificativaData] = useState({
+    tipo: TIPOS_JUSTIFICATIVA[0],
+    detalhamento: '',
+    temComprovante: false,
+    registroId: null
+  });
+  
+  const [exportandoPdf, setExportandoPdf] = useState(false);
+  
+  // Estados para funcionalidades avançadas
+  const [modoVisualizacao, setModoVisualizacao] = useState('lista'); // 'lista' ou 'calendario' ou 'dashboard'
+  const [mostrarConfigRegrasModal, setMostrarConfigRegrasModal] = useState(false);
+  const [mostrarAdicionarRegistroModal, setMostrarAdicionarRegistroModal] = useState(false);
+  const [novoRegistroData, setNovoRegistroData] = useState({
+    funcionarioId: '',
+    data: new Date().toLocaleDateString('pt-BR'),
+    modeloTrabalho: 'PADRAO'
+  });
+  
+  // Estado para configuração personalizada
+  const [configPersonalizada, setConfigPersonalizada] = useState(() => {
+    const config = localStorage.getItem('configPonto');
+    return config ? JSON.parse(config) : {
+      toleranciaAtraso: 15, // minutos
+      limiteHoraExtra: 120, // minutos por dia
+      enviarAlertaPendencia: true,
+      permitirJustificativaPosterior: true,
+      requerGeolocalizacao: false
+    };
+  });
+  // Helper para criar horários aleatórios para demonstração
+  function getRandomHour(tipo) {
+    const baseHour = tipo.includes('entrada trabalho') ? 8 :
+                     tipo.includes('saída almoço') ? 12 :
+                     tipo.includes('entrada almoço') ? 13 :
+                     tipo.includes('saída trabalho') ? 17 :
+                     tipo.includes('entrada plantão') ? 7 :
+                     tipo.includes('saída plantão') ? 19 :
+                     tipo.includes('início') ? 9 :
+                     tipo.includes('fim') ? 18 : 
+                     tipo.includes('pausa') ? 15 :
+                     tipo.includes('retorno') ? 16 : 10;
+                     
+    const randomMinute = Math.floor(Math.random() * 60);
+    return `${baseHour}:${randomMinute.toString().padStart(2, '0')}`;
+  }
+  
+  // Função para detectar modelo de trabalho baseado nos registros
+  function detectarModeloTrabalho(registros) {
+    if (!registros || registros.length === 0) return 'PADRAO';
+    
+    const tipos = registros.map(r => r.tipo);
+    
+    if (registros.length === 2 && 
+        tipos.includes('entrada trabalho') && 
+        tipos.includes('saída trabalho')) {
+      return 'MEIO_PERIODO';
+    } else if (registros.length >= 6 && 
+               tipos.includes('entrada plantão') && 
+               tipos.includes('saída plantão')) {
+      return 'PLANTAO_12H';
+    } else if (registros.length === 4 && 
+               tipos.includes('início expediente') && 
+               tipos.includes('fim expediente')) {
+      return 'HOME_OFFICE';
+    } else if (registros.length === 4 && 
+               tipos.includes('entrada trabalho') && 
+               tipos.includes('saída trabalho')) {
+      return 'PADRAO';
+    } else {
+      return 'PERSONALIZADO';
+    }
+  }
 
-    // Exportar registro
-    exportarRegistro: async (registroId) => {
-      try {
-        const response = await api.get(`/ponto/registros/${registroId}/exportar`, {
-          responseType: 'blob'
+  // Funções para gerenciar funcionários
+  const getAllPossibleFuncionarios = () => {
+    try {
+      const registeredUsers = JSON.parse(localStorage.getItem('registeredUsers') || '[]');
+      const funcionariosFromUsers = registeredUsers.map(user => ({
+        id: user.id,
+        nome: user.name || user.nome
+      }));
+      
+      const storedFuncionarios = JSON.parse(localStorage.getItem(FUNCIONARIOS_KEY) || '[]');
+      
+      const funcionariosFromRegistros = pontoRegistros.map(registro => ({
+        id: registro.funcionarioId,
+        nome: registro.funcionarioNome
+      }));
+
+      const funcionariosMap = new Map();
+      
+      [...funcionariosFromUsers, ...storedFuncionarios, ...funcionariosFromRegistros]
+        .forEach(func => {
+          if (func && func.id) {
+            funcionariosMap.set(func.id, func);
+          }
         });
-        return response.data;
-      } catch (error) {
-        console.error('Erro ao exportar registro:', error);
-        throw error;
-      }
-    },
 
-    // Buscar dashboard
-    buscarDashboard: async (filtros = {}) => {
-      try {
-        const params = new URLSearchParams();
-        if (filtros.data) params.append('data', filtros.data);
-        if (filtros.funcionario) params.append('funcionario', filtros.funcionario);
-        if (filtros.status) params.append('status', filtros.status);
-        if (filtros.modeloTrabalho) params.append('modeloTrabalho', filtros.modeloTrabalho);
-        
-        const response = await api.get(`/ponto/dashboard?${params}`);
-        return response.data;
-      } catch (error) {
-        console.error('Erro ao buscar dashboard:', error);
-        throw error;
-      }
-    }
-  };
-// Funções de carregamento de dados via API
-  const carregarRegistrosPonto = async () => {
-    try {
-      setLoading(true);
-      setError('');
-      
-      const registros = await pontoService.buscarRegistros(filtros);
-      setPontoRegistros(registros);
+      return Array.from(funcionariosMap.values());
     } catch (error) {
-      setError('');
-      console.error('', error);
-    } finally {
-      setLoading(false);
+      console.error('Erro ao obter funcionários de todas as fontes:', error);
+      return [];
     }
   };
 
-  const carregarFuncionarios = async () => {
-    try {
-      const funcionarios = await pontoService.buscarFuncionarios();
-      setAllFuncionarios(funcionarios);
-    } catch (error) {
-      setError('Erro ao carregar funcionários');
-      console.error('Erro ao carregar funcionários:', error);
-    }
-  };
-
-  const carregarModelosTrabalho = async () => {
-    try {
-      const modelos = await pontoService.buscarModelosTrabalho();
-      setModelosTrabalho(modelos);
-    } catch (error) {
-      console.error('Erro ao carregar modelos de trabalho:', error);
-      // Usa modelos iniciais em caso de erro
-    }
-  };
-
-  const carregarConfiguracoes = async () => {
-    try {
-      const config = await pontoService.buscarConfiguracoes();
-      setConfigPersonalizada(config);
-    } catch (error) {
-      console.error('Erro ao carregar configurações:', error);
-    }
-  };
-
-  // Função para adicionar novo registro - INTEGRADA COM API
-  const adicionarNovoRegistro = async () => {
-    if (!novoRegistroData.funcionarioId) {
-      setError('Selecione um funcionário.');
-      return;
-    }
-
-    if (!novoRegistroData.modeloTrabalho) {
-      setError('Selecione um modelo de trabalho.');
-      return;
+  // Função para calcular banco de horas
+  const calcularBancoHoras = (registro) => {
+    // Verificar se tem todos os registros necessários
+    if (registro.registros.some(r => r.hora === '--:--')) {
+      return { texto: 'Pendente', minutos: 0 };
     }
     
     try {
-      setLoading(true);
-      setError('');
+      const modelo = MODELOS_TRABALHO[registro.modeloTrabalho] || MODELOS_TRABALHO.PADRAO;
       
-      const funcionario = allFuncionarios.find(f => f.id.toString() === novoRegistroData.funcionarioId.toString());
-      if (!funcionario) {
-        setError('Funcionário não encontrado.');
-        return;
+      // Definir expectativa de horas conforme modelo de trabalho
+      let horasEsperadas = 0;
+      switch (registro.modeloTrabalho) {
+        case 'PADRAO':
+          horasEsperadas = 8 * 60; // 8h em minutos
+          break;
+        case 'MEIO_PERIODO':
+          horasEsperadas = 4 * 60; // 4h em minutos
+          break;
+        case 'PLANTAO_12H':
+          horasEsperadas = 12 * 60; // 12h em minutos
+          break;
+        case 'HOME_OFFICE':
+          horasEsperadas = 8 * 60; // 8h em minutos
+          break;
+        default:
+          horasEsperadas = 8 * 60; // Padrão 8h
       }
       
-      // Preparar dados para envio - converter data para formato ISO
-      const [dia, mes, ano] = novoRegistroData.data.split('/');
-      const dataISO = `${ano}-${mes.padStart(2, '0')}-${dia.padStart(2, '0')}`;
-      
-      const dadosRegistro = {
-        funcionarioId: parseInt(novoRegistroData.funcionarioId),
-        funcionarioNome: funcionario.nome,
-        data: dataISO,
-        modeloTrabalho: novoRegistroData.modeloTrabalho,
-        observacoes: '',
-        bancoHoras: 0
+      // Cálculo específico por modelo
+      const converterParaMinutos = (hora) => {
+        const [h, m] = hora.split(':').map(Number);
+        return h * 60 + m;
       };
       
-      // Enviar para API
-      const novoRegistro = await pontoService.criarRegistro(dadosRegistro);
+      let totalMinutosTrabalhados = 0;
       
-      // Atualizar lista local
-      setPontoRegistros(prev => [...prev, novoRegistro]);
-      
-      // Resetar formulário
-      setNovoRegistroData({
-        funcionarioId: '',
-        data: new Date().toLocaleDateString('pt-BR'),
-        modeloTrabalho: ''
-      });
-      
-      // Fechar modal
-      setMostrarAdicionarRegistroModal(false);
-      
-      alert(`Novo registro de ponto criado para ${funcionario.nome} em ${novoRegistroData.data}.`);
-      
-    } catch (error) {
-      setError('Erro ao adicionar novo registro');
-      console.error('Erro ao adicionar registro:', error);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  // Função para salvar configurações - INTEGRADA COM API
-  const salvarConfiguracoes = async (novaConfig) => {
-    try {
-      setLoading(true);
-      setError('');
-      
-      // Enviar para API
-      await pontoService.salvarConfiguracoes(novaConfig);
-      
-      // Atualizar estado local
-      setConfigPersonalizada(novaConfig);
-      setMostrarConfigRegrasModal(false);
-      
-      alert('Configurações salvas com sucesso!');
-      
-    } catch (error) {
-      setError('Erro ao salvar configurações');
-      console.error('Erro ao salvar configurações:', error);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  // Função para salvar status de ponto - INTEGRADA COM API
-  const salvarStatus = async (registroId, indice, novoStatus, novaHora = null, novaLocalizacao = null) => {
-    try {
-      setLoading(true);
-      setError('');
-      
-      const dadosAdicionais = {};
-      if (novaHora !== null) dadosAdicionais.hora = novaHora;
-      if (novaLocalizacao !== null) dadosAdicionais.localizacao = novaLocalizacao;
-      
-      // Enviar para API
-      await pontoService.atualizarStatusRegistro(registroId, indice, novoStatus, dadosAdicionais);
-      
-      // Atualizar estado local
-      const novosRegistros = pontoRegistros.map(registro => {
-        if (registro.id === registroId) {
-          const novosRegistrosInternos = registro.registros.map((r, idx) => {
-            if (idx === indice) {
-              return { 
-                ...r, 
-                status: novoStatus,
-                hora: novaHora !== null ? novaHora : r.hora,
-                localizacao: novaLocalizacao !== null ? novaLocalizacao : r.localizacao
-              };
-            }
-            return r;
-          });
+      if (registro.modeloTrabalho === 'PADRAO') {
+        // Modelo padrão: entrada trabalho, saída almoço, entrada almoço, saída trabalho
+        const entrada1 = registro.registros.find(r => r.tipo === 'entrada trabalho')?.hora || '';
+        const saida1 = registro.registros.find(r => r.tipo === 'saída almoço')?.hora || '';
+        const entrada2 = registro.registros.find(r => r.tipo === 'entrada almoço')?.hora || '';
+        const saida2 = registro.registros.find(r => r.tipo === 'saída trabalho')?.hora || '';
+        
+        const minEntrada1 = converterParaMinutos(entrada1);
+        const minSaida1 = converterParaMinutos(saida1);
+        const minEntrada2 = converterParaMinutos(entrada2);
+        const minSaida2 = converterParaMinutos(saida2);
+        
+        // Calcular períodos trabalhados
+        const periodo1 = minSaida1 - minEntrada1;
+        const periodo2 = minSaida2 - minEntrada2;
+        
+        totalMinutosTrabalhados = periodo1 + periodo2;
+      } else if (registro.modeloTrabalho === 'MEIO_PERIODO') {
+        // Modelo meio período: entrada trabalho, saída trabalho
+        const entrada = registro.registros.find(r => r.tipo === 'entrada trabalho')?.hora || '';
+        const saida = registro.registros.find(r => r.tipo === 'saída trabalho')?.hora || '';
+        
+        const minEntrada = converterParaMinutos(entrada);
+        const minSaida = converterParaMinutos(saida);
+        
+        totalMinutosTrabalhados = minSaida - minEntrada;
+      } else if (registro.modeloTrabalho === 'PLANTAO_12H') {
+        // Modelo plantão: considerar pausas
+        const entrada = registro.registros.find(r => r.tipo === 'entrada plantão')?.hora || '';
+        const saida = registro.registros.find(r => r.tipo === 'saída plantão')?.hora || '';
+        
+        let totalPausas = 0;
+        const pausas = registro.registros.filter(r => r.tipo.includes('pausa'));
+        const retornos = registro.registros.filter(r => r.tipo.includes('retorno'));
+        
+        for (let i = 0; i < Math.min(pausas.length, retornos.length); i++) {
+          const pausa = pausas[i].hora;
+          const retorno = retornos[i].hora;
           
-          return { ...registro, registros: novosRegistrosInternos };
+          if (pausa && retorno) {
+            totalPausas += converterParaMinutos(retorno) - converterParaMinutos(pausa);
+          }
         }
-        return registro;
-      });
-      
-      setPontoRegistros(novosRegistros);
-      
-      const registro = pontoRegistros.find(r => r.id === registroId);
-      if (registro) {
-        alert(`Ponto atualizado para ${registro.funcionarioNome} em ${registro.data}.`);
+        
+        totalMinutosTrabalhados = converterParaMinutos(saida) - converterParaMinutos(entrada) - totalPausas;
+      } else if (registro.modeloTrabalho === 'HOME_OFFICE') {
+        // Modelo home office: similar ao padrão mas com nomenclatura diferente
+        const entrada = registro.registros.find(r => r.tipo === 'início expediente')?.hora || '';
+        const saida = registro.registros.find(r => r.tipo === 'fim expediente')?.hora || '';
+        const pausa = registro.registros.find(r => r.tipo === 'pausa')?.hora || '';
+        const retorno = registro.registros.find(r => r.tipo === 'retorno')?.hora || '';
+        
+        const temPausa = pausa && pausa !== '--:--' && retorno && retorno !== '--:--';
+        
+        if (temPausa) {
+          const periodo1 = converterParaMinutos(pausa) - converterParaMinutos(entrada);
+          const periodo2 = converterParaMinutos(saida) - converterParaMinutos(retorno);
+          totalMinutosTrabalhados = periodo1 + periodo2;
+        } else {
+          totalMinutosTrabalhados = converterParaMinutos(saida) - converterParaMinutos(entrada);
+        }
       }
       
+      // Calcular saldo (positivo ou negativo)
+      const saldoMinutos = totalMinutosTrabalhados - horasEsperadas;
+      
+      // Formatar o resultado
+      const saldoHoras = Math.floor(Math.abs(saldoMinutos) / 60);
+      const saldoMinutosRestantes = Math.abs(saldoMinutos) % 60;
+      const sinalSaldo = saldoMinutos >= 0 ? '+' : '-';
+      
+      return {
+        texto: `${sinalSaldo}${saldoHoras}h${saldoMinutosRestantes.toString().padStart(2, '0')}m`,
+        minutos: saldoMinutos
+      };
     } catch (error) {
-      setError('Erro ao salvar status do ponto');
-      console.error('Erro ao salvar status:', error);
-    } finally {
-      setLoading(false);
+      console.error('Erro ao calcular banco de horas:', error);
+      return { texto: 'Erro', minutos: 0 };
     }
   };
 
-  // Função para salvar observação - INTEGRADA COM API
-  const salvarObservacao = async (registroId, novaObservacao) => {
-    try {
-      setLoading(true);
-      setError('');
-      
-      // Enviar para API
-      await pontoService.salvarObservacao(registroId, novaObservacao);
-      
-      // Atualizar estado local
-      const novosRegistros = pontoRegistros.map(registro => {
-        if (registro.id === registroId) {
-          return { ...registro, observacoes: novaObservacao };
-        }
-        return registro;
-      });
-      
-      setPontoRegistros(novosRegistros);
-      setEditandoObservacao(null);
-      
-      alert('Observação salva com sucesso!');
-      
-    } catch (error) {
-      setError('Erro ao salvar observação');
-      console.error('Erro ao salvar observação:', error);
-    } finally {
-      setLoading(false);
-    }
-  };
-// Função para enviar notificação - INTEGRADA COM API
-  const enviarNotificacaoPersonalizada = async () => {
-    if (!funcionarioSelecionado || !notificacaoPersonalizada.trim()) {
-      setError('É necessário preencher a mensagem de notificação.');
-      return;
+  // Função para calcular horas trabalhadas
+  const calcularHorasTrabalhadas = (registro) => {
+    // Verificar se tem todos os registros necessários
+    if (registro.registros.some(r => r.hora === '--:--')) {
+      return 'Pendente';
     }
     
     try {
-      setLoading(true);
-      setError('');
+      const modelo = MODELOS_TRABALHO[registro.modeloTrabalho] || MODELOS_TRABALHO.PADRAO;
       
-      // Dados extras para a notificação
-      const dadosExtras = {
-        tipo: 'ponto_pendente',
-        data: funcionarioSelecionado.data,
-        pendencias: funcionarioSelecionado.pendencias,
+      // Função auxiliar para converter horas em minutos
+      const converterParaMinutos = (hora) => {
+        const [h, m] = hora.split(':').map(Number);
+        return h * 60 + m;
+      };
+      
+      let totalMinutosTrabalhados = 0;
+      
+      // Cálculo baseado no modelo de trabalho
+      if (registro.modeloTrabalho === 'PADRAO') {
+        const entrada1 = registro.registros.find(r => r.tipo === 'entrada trabalho')?.hora || '';
+        const saida1 = registro.registros.find(r => r.tipo === 'saída almoço')?.hora || '';
+        const entrada2 = registro.registros.find(r => r.tipo === 'entrada almoço')?.hora || '';
+        const saida2 = registro.registros.find(r => r.tipo === 'saída trabalho')?.hora || '';
+        
+        const periodo1 = converterParaMinutos(saida1) - converterParaMinutos(entrada1);
+        const periodo2 = converterParaMinutos(saida2) - converterParaMinutos(entrada2);
+        
+        totalMinutosTrabalhados = periodo1 + periodo2;
+      } else if (registro.modeloTrabalho === 'MEIO_PERIODO') {
+        const entrada = registro.registros.find(r => r.tipo === 'entrada trabalho')?.hora || '';
+        const saida = registro.registros.find(r => r.tipo === 'saída trabalho')?.hora || '';
+        
+        totalMinutosTrabalhados = converterParaMinutos(saida) - converterParaMinutos(entrada);
+      } else if (registro.modeloTrabalho === 'PLANTAO_12H') {
+        const entrada = registro.registros.find(r => r.tipo === 'entrada plantão')?.hora || '';
+        const saida = registro.registros.find(r => r.tipo === 'saída plantão')?.hora || '';
+        
+        // Descontar pausas
+        let totalPausas = 0;
+        const pausas = registro.registros.filter(r => r.tipo.includes('pausa'));
+        const retornos = registro.registros.filter(r => r.tipo.includes('retorno'));
+        
+        for (let i = 0; i < Math.min(pausas.length, retornos.length); i++) {
+          const pausa = pausas[i].hora;
+          const retorno = retornos[i].hora;
+          
+          if (pausa && retorno) {
+            totalPausas += converterParaMinutos(retorno) - converterParaMinutos(pausa);
+          }
+        }
+        
+        totalMinutosTrabalhados = converterParaMinutos(saida) - converterParaMinutos(entrada) - totalPausas;
+      } else if (registro.modeloTrabalho === 'HOME_OFFICE') {
+        const entrada = registro.registros.find(r => r.tipo === 'início expediente')?.hora || '';
+        const saida = registro.registros.find(r => r.tipo === 'fim expediente')?.hora || '';
+        const pausa = registro.registros.find(r => r.tipo === 'pausa')?.hora || '';
+        const retorno = registro.registros.find(r => r.tipo === 'retorno')?.hora || '';
+        
+        const temPausa = pausa && pausa !== '--:--' && retorno && retorno !== '--:--';
+        
+        if (temPausa) {
+          const periodo1 = converterParaMinutos(pausa) - converterParaMinutos(entrada);
+          const periodo2 = converterParaMinutos(saida) - converterParaMinutos(retorno);
+          totalMinutosTrabalhados = periodo1 + periodo2;
+        } else {
+          totalMinutosTrabalhados = converterParaMinutos(saida) - converterParaMinutos(entrada);
+        }
+      }
+      
+      // Converter resultado de volta para horas:minutos
+      const horas = Math.floor(totalMinutosTrabalhados / 60);
+      const minutos = totalMinutosTrabalhados % 60;
+      
+      return `${horas}h${minutos.toString().padStart(2, '0')}m`;
+    } catch (error) {
+      console.error('Erro ao calcular horas trabalhadas:', error);
+      return 'Erro';
+    }
+  };
+  // Função para salvar status de ponto
+  const salvarStatus = (registroId, indice, novoStatus, novaHora = null, novaLocalizacao = null) => {
+    // Salvar na chave individualizada no localStorage
+    const statusKey = `pontoStatus_${registroId}_${indice}`;
+    localStorage.setItem(statusKey, novoStatus);
+    
+    // Atualizar o estado local
+    const novosRegistros = pontoRegistros.map(registro => {
+      if (registro.id === registroId) {
+        const novosRegistrosInternos = registro.registros.map((r, idx) => {
+          if (idx === indice) {
+            return { 
+              ...r, 
+              status: novoStatus,
+              hora: novaHora !== null ? novaHora : r.hora,
+              localizacao: novaLocalizacao !== null ? novaLocalizacao : r.localizacao
+            };
+          }
+          return r;
+        });
+        
+        return { ...registro, registros: novosRegistrosInternos };
+      }
+      return registro;
+    });
+    
+    // Atualizar o estado e o localStorage
+    setPontoRegistros(novosRegistros);
+    localStorage.setItem('pontoRegistros', JSON.stringify(novosRegistros));
+    
+    // Adicionar notificação para o funcionário
+    const registro = pontoRegistros.find(r => r.id === registroId);
+    if (registro) {
+      const notificacoes = JSON.parse(localStorage.getItem('userNotifications') || '[]');
+      notificacoes.push({
+        id: Date.now(),
+        userId: registro.funcionarioId,
+        message: `Seu registro de ponto do dia ${registro.data} foi ${novoStatus} pelo administrador.`,
+        date: new Date().toLocaleDateString('pt-BR'),
+        read: false,
         urgente: true
-      };
+      });
+      localStorage.setItem('userNotifications', JSON.stringify(notificacoes));
       
-      // Enviar para API
-      await pontoService.enviarNotificacao(
-        funcionarioSelecionado.id, 
-        notificacaoPersonalizada, 
-        dadosExtras
-      );
-      
-      alert(`Notificação enviada para ${funcionarioSelecionado.nome} sobre ponto pendente.`);
-      
-      // Limpar formulário e fechar modal
-      setMostrarNotificacaoModal(false);
-      setNotificacaoPersonalizada('');
-      setFuncionarioSelecionado(null);
-      
-    } catch (error) {
-      setError('Erro ao enviar notificação');
-      console.error('Erro ao enviar notificação:', error);
-    } finally {
-      setLoading(false);
+      alert(`Ponto atualizado para ${registro.funcionarioNome} em ${registro.data}.`);
     }
   };
 
-  // Função para salvar justificativa - INTEGRADA COM API
-  const salvarJustificativa = async () => {
-    if (!justificativaData.registroId) {
-      setError('Registro não identificado para justificativa.');
-      return;
-    }
+  // Função para salvar observações
+  const salvarObservacao = (registroId, novaObservacao) => {
+    const novosRegistros = pontoRegistros.map(registro => {
+      if (registro.id === registroId) {
+        return { ...registro, observacoes: novaObservacao };
+      }
+      return registro;
+    });
+    
+    setPontoRegistros(novosRegistros);
+    localStorage.setItem('pontoRegistros', JSON.stringify(novosRegistros));
+    setEditandoObservacao(null);
+  };
 
-    if (!justificativaData.tipo) {
-      setError('Selecione um tipo de justificativa.');
+  // Funções para edição de registros
+  const iniciarEdicaoPonto = (registroId, indiceRegistro) => {
+    setEditandoRegistro({ registroId, indiceRegistro });
+    setTimeout(() => {
+      if (horaInputRefs.current[`${registroId}-${indiceRegistro}`]) {
+        horaInputRefs.current[`${registroId}-${indiceRegistro}`].focus();
+      }
+    }, 100);
+  };
+
+  const iniciarEdicaoObservacao = (registroId) => {
+    setEditandoObservacao(registroId);
+    const registro = pontoRegistros.find(r => r.id === registroId);
+    
+    setTimeout(() => {
+      if (observacaoInputRef.current) {
+        observacaoInputRef.current.value = registro?.observacoes || '';
+        observacaoInputRef.current.focus();
+      }
+    }, 100);
+  };
+
+  const salvarEdicaoPonto = (registroId, indiceRegistro, statusSelecionado = STATUS_AJUSTADO) => {
+    const inputRef = horaInputRefs.current[`${registroId}-${indiceRegistro}`];
+    if (inputRef && inputRef.value) {
+      salvarStatus(registroId, indiceRegistro, statusSelecionado, inputRef.value);
+    }
+    setEditandoRegistro(null);
+  };
+
+  const cancelarEdicaoPonto = () => {
+    setEditandoRegistro(null);
+  };
+
+  // Função para adicionar novo registro de ponto
+  const adicionarNovoRegistro = () => {
+    if (!novoRegistroData.funcionarioId) {
+      alert('Selecione um funcionário.');
       return;
     }
     
-    try {
-      setLoading(true);
-      setError('');
-      
-      const registro = pontoRegistros.find(r => r.id === justificativaData.registroId);
-      if (!registro) {
-        setError('Registro não encontrado.');
-        return;
-      }
-      
-      // Preparar dados da justificativa
-      const dadosJustificativa = {
-        registroId: justificativaData.registroId,
-        funcionarioId: registro.funcionarioId,
-        funcionarioNome: registro.funcionarioNome,
-        data: registro.data,
-        tipo: justificativaData.tipo,
-        detalhamento: justificativaData.detalhamento,
-        temComprovante: justificativaData.temComprovante,
-        pontosPendentes: registro.registros
-          .map((r, i) => ({ ...r, indice: i }))
-          .filter(r => r.status === STATUS_PENDENTE || r.status === 'falta')
-          .map(r => ({
-            tipo: r.tipo,
-            indice: r.indice
-          }))
-      };
-      
-      // Enviar para API
-      await pontoService.registrarJustificativa(dadosJustificativa);
-      
-      // Atualizar registros locais - marcar como falta justificada
-      const novosRegistros = pontoRegistros.map(r => {
-        if (r.id === justificativaData.registroId) {
-          const registrosAtualizados = r.registros.map((reg, idx) => {
-            if (reg.status === STATUS_PENDENTE || reg.status === 'falta') {
-              return { ...reg, status: 'falta justificada' };
-            }
-            return reg;
-          });
-          
-          const novaObservacao = r.observacoes + (r.observacoes ? '\n' : '') + 
-            `Justificativa: ${justificativaData.tipo} - ${justificativaData.detalhamento}`;
-          
-          return { 
-            ...r, 
-            registros: registrosAtualizados, 
-            observacoes: novaObservacao 
-          };
-        }
-        return r;
-      });
-      
-      setPontoRegistros(novosRegistros);
-      
-      alert(`Falta justificada registrada para ${registro.funcionarioNome} em ${registro.data}.`);
-      
-      // Fechar modal e limpar dados
-      setMostrarJustificativaModal(false);
-      setJustificativaData({
-        tipo: '',
-        detalhamento: '',
-        temComprovante: false,
-        registroId: null
-      });
-      
-    } catch (error) {
-      setError('Erro ao salvar justificativa');
-      console.error('Erro ao salvar justificativa:', error);
-    } finally {
-      setLoading(false);
+    const funcionario = allFuncionarios.find(f => f.id.toString() === novoRegistroData.funcionarioId.toString());
+    if (!funcionario) {
+      alert('Funcionário não encontrado.');
+      return;
     }
+    
+    // Criar ID para o novo registro
+    const novoId = Math.max(...pontoRegistros.map(r => r.id), 0) + 1;
+    
+    // Criar registros com base no modelo selecionado
+    const modeloSelecionado = MODELOS_TRABALHO[novoRegistroData.modeloTrabalho];
+    const registros = modeloSelecionado.registros.map(r => ({
+      tipo: r.tipo,
+      label: r.label,
+      hora: '--:--',
+      status: STATUS_PENDENTE,
+      localizacao: ''
+    }));
+    
+    // Criar novo registro
+    const novoRegistro = {
+      id: novoId,
+      funcionarioId: parseInt(novoRegistroData.funcionarioId),
+      funcionarioNome: funcionario.nome,
+      data: novoRegistroData.data,
+      modeloTrabalho: novoRegistroData.modeloTrabalho,
+      registros: registros,
+      bancoHoras: 0,
+      observacoes: ''
+    };
+    
+    // Adicionar ao estado
+    const novosRegistros = [...pontoRegistros, novoRegistro];
+    setPontoRegistros(novosRegistros);
+    localStorage.setItem('pontoRegistros', JSON.stringify(novosRegistros));
+    
+    // Resetar formulário
+    setNovoRegistroData({
+      funcionarioId: '',
+      data: new Date().toLocaleDateString('pt-BR'),
+      modeloTrabalho: 'PADRAO'
+    });
+    
+    // Fechar modal
+    setMostrarAdicionarRegistroModal(false);
+    
+    alert(`Novo registro de ponto criado para ${funcionario.nome} em ${novoRegistroData.data}.`);
   };
 
-  // Função para exportar registro - INTEGRADA COM API
-  const exportarRegistro = async (registroId) => {
-    try {
-      setExportandoPdf(true);
-      setError('');
-      
-      // Buscar dados do registro da API
-      const blob = await pontoService.exportarRegistro(registroId);
-      
-      // Criar download
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      
-      const registro = pontoRegistros.find(r => r.id === registroId);
-      const nomeArquivo = registro 
-        ? `ponto_${registro.funcionarioNome.replace(/\s+/g, '_')}_${registro.data.replace(/\//g, '-')}.pdf`
-        : `ponto_registro_${registroId}.pdf`;
-        
-      a.download = nomeArquivo;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      URL.revokeObjectURL(url);
-      
-      alert(`Espelho de ponto exportado com sucesso!`);
-      
-    } catch (error) {
-      setError('Erro ao exportar registro');
-      console.error('Erro ao exportar registro:', error);
-    } finally {
-      setExportandoPdf(false);
-    }
+  // Função para salvar observação
+  const salvarObservacaoEditar = () => {
+    if (!editandoObservacao) return;
+    
+    const novaObservacao = observacaoInputRef.current?.value || '';
+    salvarObservacao(editandoObservacao, novaObservacao);
   };
-
-  // Função para notificar funcionário - INTEGRADA COM API
-  const notificarFuncionario = async (registroId) => {
+  // Função para notificar funcionário
+  const notificarFuncionario = (registroId) => {
     const registro = pontoRegistros.find(r => r.id === registroId);
     if (!registro) return;
     
@@ -717,220 +698,216 @@ const PontoBatidoFlexivel = () => {
     setMostrarNotificacaoModal(true);
   };
 
-  // Função para abrir modal de justificativa
+  // Função para enviar notificação personalizada
+  const enviarNotificacaoPersonalizada = () => {
+    if (!funcionarioSelecionado || !notificacaoPersonalizada.trim()) {
+      alert('É necessário preencher a mensagem de notificação.');
+      return;
+    }
+    
+    const notificacoes = JSON.parse(localStorage.getItem('userNotifications') || '[]');
+    notificacoes.push({
+      id: Date.now(),
+      userId: funcionarioSelecionado.id,
+      message: notificacaoPersonalizada,
+      date: new Date().toLocaleDateString('pt-BR'),
+      read: false,
+      urgente: true,
+      tipo: 'ponto_pendente',
+      data: funcionarioSelecionado.data,
+      pendencias: funcionarioSelecionado.pendencias
+    });
+    
+    localStorage.setItem('userNotifications', JSON.stringify(notificacoes));
+    alert(`Notificação enviada para ${funcionarioSelecionado.nome} sobre ponto pendente.`);
+    
+    setMostrarNotificacaoModal(false);
+    setNotificacaoPersonalizada('');
+    setFuncionarioSelecionado(null);
+  };
+
+  // Função para justificativa
   const abrirJustificativaModal = (registroId) => {
     const registro = pontoRegistros.find(r => r.id === registroId);
     if (!registro) return;
     
-    // Resetar dados da justificativa com valores padrão (não selecionados)
     setJustificativaData({
-      tipo: '', // '' = nenhum tipo selecionado
+      tipo: TIPOS_JUSTIFICATIVA[0],
       detalhamento: '',
-      temComprovante: false, // false = não selecionado
+      temComprovante: false,
       registroId: registroId
     });
     
     setMostrarJustificativaModal(true);
   };
 
-  // Funções para edição de registros
-  const iniciarEdicaoPonto = (registroId, indiceRegistro) => {
-    setEditandoRegistro({ registroId, indiceRegistro });
-    setTimeout(() => {
-      if (horaInputRefs.current[`${registroId}-${indiceRegistro}`]) {
-        horaInputRefs.current[`${registroId}-${indiceRegistro}`].focus();
+  const salvarJustificativa = () => {
+    if (!justificativaData.registroId) return;
+    
+    const registro = pontoRegistros.find(r => r.id === justificativaData.registroId);
+    if (!registro) {
+      alert('Registro não encontrado.');
+      return;
+    }
+    
+    // Salvar histórico da justificativa
+    const justificativasHistorico = JSON.parse(localStorage.getItem('justificativasHistorico') || '[]');
+    justificativasHistorico.push({
+      id: Date.now(),
+      registroId: justificativaData.registroId,
+      funcionarioId: registro.funcionarioId,
+      funcionarioNome: registro.funcionarioNome,
+      data: registro.data,
+      tipo: justificativaData.tipo,
+      detalhamento: justificativaData.detalhamento,
+      temComprovante: justificativaData.temComprovante,
+      dataCriacao: new Date().toISOString(),
+      pontosPendentes: registro.registros
+        .map((r, i) => ({ ...r, indice: i }))
+        .filter(r => r.status === STATUS_PENDENTE || r.status === 'falta')
+        .map(r => ({
+          tipo: r.tipo,
+          indice: r.indice
+        }))
+    });
+    
+    localStorage.setItem('justificativasHistorico', JSON.stringify(justificativasHistorico));
+    
+    // Atualizar status dos registros pendentes
+    let mudancas = false;
+    const novosRegistros = pontoRegistros.map(r => {
+      if (r.id === justificativaData.registroId) {
+        const registrosAtualizados = r.registros.map((reg, idx) => {
+          if (reg.status === STATUS_PENDENTE || reg.status === 'falta') {
+            // Salvar na chave individualizada
+            const statusKey = `pontoStatus_${justificativaData.registroId}_${idx}`;
+            localStorage.setItem(statusKey, 'falta justificada');
+            mudancas = true;
+            return { ...reg, status: 'falta justificada' };
+          }
+          return reg;
+        });
+        
+        return { ...r, registros: registrosAtualizados, observacoes: r.observacoes + (r.observacoes ? '\n' : '') + `Justificativa: ${justificativaData.tipo} - ${justificativaData.detalhamento}` };
       }
-    }, 100);
+      return r;
+    });
+    
+    if (mudancas) {
+      setPontoRegistros(novosRegistros);
+      localStorage.setItem('pontoRegistros', JSON.stringify(novosRegistros));
+      
+      // Adicionar notificação para o funcionário
+      const notificacoes = JSON.parse(localStorage.getItem('userNotifications') || '[]');
+      notificacoes.push({
+        id: Date.now(),
+        userId: registro.funcionarioId,
+        message: `Sua falta do dia ${registro.data} foi justificada como "${justificativaData.tipo}".`,
+        date: new Date().toLocaleDateString('pt-BR'),
+        read: false
+      });
+      localStorage.setItem('userNotifications', JSON.stringify(notificacoes));
+      
+      alert(`Falta justificada registrada para ${registro.funcionarioNome} em ${registro.data}.`);
+    }
+    
+    setMostrarJustificativaModal(false);
   };
 
-  const iniciarEdicaoObservacao = (registroId) => {
-    setEditandoObservacao(registroId);
+  // Função para exportar registro individual
+  const exportarRegistro = (registroId) => {
     const registro = pontoRegistros.find(r => r.id === registroId);
+    if (!registro) return;
+    
+    // Simular geração de PDF
+    setExportandoPdf(true);
     
     setTimeout(() => {
-      if (observacaoInputRef.current) {
-        observacaoInputRef.current.value = registro?.observacoes || '';
-        observacaoInputRef.current.focus();
-      }
-    }, 100);
+      const modelo = MODELOS_TRABALHO[registro.modeloTrabalho];
+      const bancoHoras = calcularBancoHoras(registro);
+      
+      // Criar conteúdo para download
+      const content = `
+ESPELHO DE PONTO - ${registro.funcionarioNome}
+Data: ${registro.data}
+Modelo de Trabalho: ${modelo.nome}
+
+REGISTROS:
+${registro.registros.map(r => `${r.label}: ${r.hora} - Status: ${r.status.toUpperCase()}${r.localizacao ? ` - Local: ${r.localizacao}` : ''}`).join('\n')}
+
+HORAS TRABALHADAS: ${calcularHorasTrabalhadas(registro)}
+BANCO DE HORAS: ${bancoHoras.texto}
+
+OBSERVAÇÕES:
+${registro.observacoes || 'Nenhuma observação registrada.'}
+
+PENDÊNCIAS: ${
+  registro.registros.some(r => r.status === STATUS_PENDENTE) 
+  ? registro.registros
+      .filter(r => r.status === STATUS_PENDENTE)
+      .map(r => r.label).join(', ')
+  : 'Nenhuma pendência'
+}
+
+ASSINATURAS:
+
+____________________________     ____________________________
+      Funcionário                        Gestor
+`;
+
+      // Criar um blob e fazer download
+      const blob = new Blob([content], { type: 'text/plain' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `ponto_${registro.funcionarioNome.replace(/\s+/g, '_')}_${registro.data.replace(/\//g, '-')}.txt`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      
+      setExportandoPdf(false);
+      alert(`Espelho de ponto de ${registro.funcionarioNome} exportado com sucesso!`);
+    }, 1000);
   };
 
-  const salvarEdicaoPonto = async (registroId, indiceRegistro, statusSelecionado = STATUS_AJUSTADO) => {
-    const inputRef = horaInputRefs.current[`${registroId}-${indiceRegistro}`];
-    if (inputRef && inputRef.value) {
-      await salvarStatus(registroId, indiceRegistro, statusSelecionado, inputRef.value);
-    }
-    setEditandoRegistro(null);
+  // Função para salvar configurações
+  const salvarConfiguracoes = (novaConfig) => {
+    setConfigPersonalizada(novaConfig);
+    localStorage.setItem('configPonto', JSON.stringify(novaConfig));
+    setMostrarConfigRegrasModal(false);
+    alert('Configurações salvas com sucesso!');
   };
 
-  const cancelarEdicaoPonto = () => {
-    setEditandoRegistro(null);
+  // Funções para lidar com múltiplas visualizações
+  const alterarModoVisualizacao = (modo) => {
+    setModoVisualizacao(modo);
   };
-
-  const salvarObservacaoEditar = async () => {
-    if (!editandoObservacao) return;
+  // Efeitos para carregar dados iniciais
+  useEffect(() => {
+    // Carregar lista de funcionários e inicializar
+    const funcionarios = getAllPossibleFuncionarios();
+    setAllFuncionarios(funcionarios);
     
-    const novaObservacao = observacaoInputRef.current?.value || '';
-    await salvarObservacao(editandoObservacao, novaObservacao);
-  };
-
-  // Função para calcular banco de horas
-  const calcularBancoHoras = (registro) => {
-    if (registro.registros.some(r => r.hora === '--:--')) {
-      return { texto: 'Pendente', minutos: 0 };
-    }
-    
-    try {
-      const modelo = modelosTrabalho[registro.modeloTrabalho] || modelosTrabalho.PADRAO;
-      const horasEsperadas = modelo.horasEsperadas || 480; // padrão 8h
-      
-      const converterParaMinutos = (hora) => {
-        const [h, m] = hora.split(':').map(Number);
-        return h * 60 + m;
-      };
-      
-      let totalMinutosTrabalhados = 0;
-      
-      if (registro.modeloTrabalho === 'PADRAO') {
-        const entrada1 = registro.registros.find(r => r.tipo === 'entrada_trabalho')?.hora || '';
-        const saida1 = registro.registros.find(r => r.tipo === 'saida_almoco')?.hora || '';
-        const entrada2 = registro.registros.find(r => r.tipo === 'entrada_almoco')?.hora || '';
-        const saida2 = registro.registros.find(r => r.tipo === 'saida_trabalho')?.hora || '';
-        
-        const periodo1 = converterParaMinutos(saida1) - converterParaMinutos(entrada1);
-        const periodo2 = converterParaMinutos(saida2) - converterParaMinutos(entrada2);
-        
-        totalMinutosTrabalhados = periodo1 + periodo2;
-      } else if (registro.modeloTrabalho === 'MEIO_PERIODO') {
-        const entrada = registro.registros.find(r => r.tipo === 'entrada_trabalho')?.hora || '';
-        const saida = registro.registros.find(r => r.tipo === 'saida_trabalho')?.hora || '';
-        
-        totalMinutosTrabalhados = converterParaMinutos(saida) - converterParaMinutos(entrada);
-      } else if (registro.modeloTrabalho === 'PLANTAO_12H') {
-        const entrada = registro.registros.find(r => r.tipo === 'entrada_plantao')?.hora || '';
-        const saida = registro.registros.find(r => r.tipo === 'saida_plantao')?.hora || '';
-        
-        let totalPausas = 0;
-        const pausas = registro.registros.filter(r => r.tipo.includes('pausa'));
-        const retornos = registro.registros.filter(r => r.tipo.includes('retorno'));
-        
-        for (let i = 0; i < Math.min(pausas.length, retornos.length); i++) {
-          const pausa = pausas[i].hora;
-          const retorno = retornos[i].hora;
-          
-          if (pausa && retorno) {
-            totalPausas += converterParaMinutos(retorno) - converterParaMinutos(pausa);
-          }
-        }
-        
-        totalMinutosTrabalhados = converterParaMinutos(saida) - converterParaMinutos(entrada) - totalPausas;
-      } else if (registro.modeloTrabalho === 'HOME_OFFICE') {
-        const entrada = registro.registros.find(r => r.tipo === 'inicio_expediente')?.hora || '';
-        const saida = registro.registros.find(r => r.tipo === 'fim_expediente')?.hora || '';
-        const pausa = registro.registros.find(r => r.tipo === 'pausa')?.hora || '';
-        const retorno = registro.registros.find(r => r.tipo === 'retorno')?.hora || '';
-        
-        const temPausa = pausa && pausa !== '--:--' && retorno && retorno !== '--:--';
-        
-        if (temPausa) {
-          const periodo1 = converterParaMinutos(pausa) - converterParaMinutos(entrada);
-          const periodo2 = converterParaMinutos(saida) - converterParaMinutos(retorno);
-          totalMinutosTrabalhados = periodo1 + periodo2;
-        } else {
-          totalMinutosTrabalhados = converterParaMinutos(saida) - converterParaMinutos(entrada);
-        }
+    // Configurar listener para mudanças no localStorage
+    const handleStorageChange = (e) => {
+      if (e.key === FUNCIONARIOS_KEY || e.key === 'registeredUsers' || e.key === 'user') {
+        setAllFuncionarios(getAllPossibleFuncionarios());
       }
-      
-      const saldoMinutos = totalMinutosTrabalhados - horasEsperadas;
-      const saldoHoras = Math.floor(Math.abs(saldoMinutos) / 60);
-      const saldoMinutosRestantes = Math.abs(saldoMinutos) % 60;
-      const sinalSaldo = saldoMinutos >= 0 ? '+' : '-';
-      
-      return {
-        texto: `${sinalSaldo}${saldoHoras}h${saldoMinutosRestantes.toString().padStart(2, '0')}m`,
-        minutos: saldoMinutos
-      };
-    } catch (error) {
-      console.error('Erro ao calcular banco de horas:', error);
-      return { texto: 'Erro', minutos: 0 };
-    }
-  };
-
-  // Função para calcular horas trabalhadas
-  const calcularHorasTrabalhadas = (registro) => {
-    if (registro.registros.some(r => r.hora === '--:--')) {
-      return 'Pendente';
-    }
+    };
+    window.addEventListener('storage', handleStorageChange);
     
-    try {
-      const converterParaMinutos = (hora) => {
-        const [h, m] = hora.split(':').map(Number);
-        return h * 60 + m;
-      };
-      
-      let totalMinutosTrabalhados = 0;
-      
-      if (registro.modeloTrabalho === 'PADRAO') {
-        const entrada1 = registro.registros.find(r => r.tipo === 'entrada_trabalho')?.hora || '';
-        const saida1 = registro.registros.find(r => r.tipo === 'saida_almoco')?.hora || '';
-        const entrada2 = registro.registros.find(r => r.tipo === 'entrada_almoco')?.hora || '';
-        const saida2 = registro.registros.find(r => r.tipo === 'saida_trabalho')?.hora || '';
-        
-        const periodo1 = converterParaMinutos(saida1) - converterParaMinutos(entrada1);
-        const periodo2 = converterParaMinutos(saida2) - converterParaMinutos(entrada2);
-        
-        totalMinutosTrabalhados = periodo1 + periodo2;
-      } else if (registro.modeloTrabalho === 'MEIO_PERIODO') {
-        const entrada = registro.registros.find(r => r.tipo === 'entrada_trabalho')?.hora || '';
-        const saida = registro.registros.find(r => r.tipo === 'saida_trabalho')?.hora || '';
-        
-        totalMinutosTrabalhados = converterParaMinutos(saida) - converterParaMinutos(entrada);
-      } else if (registro.modeloTrabalho === 'PLANTAO_12H') {
-        const entrada = registro.registros.find(r => r.tipo === 'entrada_plantao')?.hora || '';
-        const saida = registro.registros.find(r => r.tipo === 'saida_plantao')?.hora || '';
-        
-        let totalPausas = 0;
-        const pausas = registro.registros.filter(r => r.tipo.includes('pausa'));
-        const retornos = registro.registros.filter(r => r.tipo.includes('retorno'));
-        
-        for (let i = 0; i < Math.min(pausas.length, retornos.length); i++) {
-          const pausa = pausas[i].hora;
-          const retorno = retornos[i].hora;
-          
-          if (pausa && retorno) {
-            totalPausas += converterParaMinutos(retorno) - converterParaMinutos(pausa);
-          }
-        }
-        
-        totalMinutosTrabalhados = converterParaMinutos(saida) - converterParaMinutos(entrada) - totalPausas;
-      } else if (registro.modeloTrabalho === 'HOME_OFFICE') {
-        const entrada = registro.registros.find(r => r.tipo === 'inicio_expediente')?.hora || '';
-        const saida = registro.registros.find(r => r.tipo === 'fim_expediente')?.hora || '';
-        const pausa = registro.registros.find(r => r.tipo === 'pausa')?.hora || '';
-        const retorno = registro.registros.find(r => r.tipo === 'retorno')?.hora || '';
-        
-        const temPausa = pausa && pausa !== '--:--' && retorno && retorno !== '--:--';
-        
-        if (temPausa) {
-          const periodo1 = converterParaMinutos(pausa) - converterParaMinutos(entrada);
-          const periodo2 = converterParaMinutos(saida) - converterParaMinutos(retorno);
-          totalMinutosTrabalhados = periodo1 + periodo2;
-        } else {
-          totalMinutosTrabalhados = converterParaMinutos(saida) - converterParaMinutos(entrada);
-        }
-      }
-      
-      const horas = Math.floor(totalMinutosTrabalhados / 60);
-      const minutos = totalMinutosTrabalhados % 60;
-      
-      return `${horas}h${minutos.toString().padStart(2, '0')}m`;
-    } catch (error) {
-      console.error('Erro ao calcular horas trabalhadas:', error);
-      return 'Erro';
-    }
-  };
+    return () => {
+      window.removeEventListener('storage', handleStorageChange);
+    };
+  }, []);
 
-  // Função para renderizar status
+  // Persistir mudanças no estado
+  useEffect(() => {
+    localStorage.setItem('pontoRegistros', JSON.stringify(pontoRegistros));
+  }, [pontoRegistros]);
+
+  // Funções para renderizar elementos de UI
   const renderizarStatus = (status) => {
     let corClasse = '';
     let texto = status.toUpperCase();
@@ -974,43 +951,16 @@ const PontoBatidoFlexivel = () => {
     );
   };
 
-  // useEffect para carregamento inicial
-  useEffect(() => {
-    const carregarDadosIniciais = async () => {
-      await Promise.all([
-        carregarFuncionarios(),
-        carregarModelosTrabalho(),
-        carregarConfiguracoes(),
-        carregarRegistrosPonto()
-      ]);
-    };
-    
-    carregarDadosIniciais();
-  }, []);
-
-  // useEffect para recarregar dados quando filtros mudam
-  useEffect(() => {
-    carregarRegistrosPonto();
-  }, [filtros]);
-
-  // Preparar dados para visualização
+  // Preparar dados para a visualização atual
   const funcionarios = [...new Set(allFuncionarios.map(f => f.nome))].sort();
   const datas = [...new Set(pontoRegistros.map(registro => registro.data))].sort((a, b) => {
-    // Converter data BR para comparação
-    const parseDate = (dateStr) => {
-      if (dateStr.includes('/')) {
-        const [dia, mes, ano] = dateStr.split('/').map(Number);
-        return new Date(ano, mes - 1, dia);
-      } else {
-        return new Date(dateStr);
-      }
-    };
-    
-    const dateA = parseDate(a);
-    const dateB = parseDate(b);
-    return dateB - dateA;
+    const [diaA, mesA, anoA] = a.split('/').map(Number);
+    const [diaB, mesB, anoB] = b.split('/').map(Number);
+    const dateA = new Date(anoA, mesA - 1, diaA);
+    const dateB = new Date(anoB, mesB - 1, diaB);
+    return dateB - dateA; // Ordenação descendente
   });
-
+  
   // Filtrar registros
   const registrosFiltrados = pontoRegistros.filter(registro => {
     const filtroModeloTrabalho = filtros.modeloTrabalho === '' || registro.modeloTrabalho === filtros.modeloTrabalho;
@@ -1025,61 +975,41 @@ const PontoBatidoFlexivel = () => {
 
   // Ordenar registros
   const registrosOrdenados = [...registrosFiltrados].sort((a, b) => {
-    // Converter data para comparação
-    const parseDate = (dateStr) => {
-      if (dateStr.includes('/')) {
-        const [dia, mes, ano] = dateStr.split('/').map(Number);
-        return new Date(ano, mes - 1, dia);
-      } else {
-        return new Date(dateStr);
-      }
-    };
-    
-    const dateA = parseDate(a.data);
-    const dateB = parseDate(b.data);
+    // Primeiro ordenar por data (mais recente primeiro)
+    const [diaA, mesA, anoA] = a.data.split('/').map(Number);
+    const [diaB, mesB, anoB] = b.data.split('/').map(Number);
+    const dateA = new Date(anoA, mesA - 1, diaA);
+    const dateB = new Date(anoB, mesB - 1, diaB);
     
     const compareDatas = dateB - dateA;
     if (compareDatas !== 0) return compareDatas;
     
+    // Depois ordenar por nome do funcionário
     return a.funcionarioNome.localeCompare(b.funcionarioNome);
   });
-
-  // Dados para dashboard
+  
+  // Agrupar dados para dashboard
   const dadosDashboard = {
     totalRegistros: registrosFiltrados.length,
     totalPendentes: registrosFiltrados.filter(r => r.registros.some(reg => reg.status === STATUS_PENDENTE)).length,
     totalAprovados: registrosFiltrados.filter(r => r.registros.every(reg => reg.status !== STATUS_PENDENTE && reg.status !== STATUS_REJEITADO)).length,
     totalJustificados: registrosFiltrados.filter(r => r.registros.some(reg => reg.status === 'falta justificada')).length,
-    modelosTrabalho: Object.entries(modelosTrabalho).map(([key, modelo]) => ({
+    modelosTrabalho: Object.entries(MODELOS_TRABALHO).map(([key, modelo]) => ({
       id: key,
       nome: modelo.nome,
       total: registrosFiltrados.filter(r => r.modeloTrabalho === key).length
     }))
   };
-
-  // INÍCIO DA INTERFACE JSX
+  // Renderizar interface principal
   return (
     <div className="bg-purple-800 bg-opacity-40 backdrop-blur-sm rounded-lg shadow-lg p-6">
-      {/* Error Banner */}
-      {error && (
-        <div className="bg-red-600 bg-opacity-80 text-white px-4 py-2 rounded mb-4 text-center text-sm">
-          ⚠️ {error}
-          <button 
-            onClick={() => setError('')}
-            className="ml-2 text-red-200 hover:text-white"
-          >
-            ×
-          </button>
-        </div>
-      )}
-
       <div className="mb-6 flex flex-wrap items-center justify-between">
         <h1 className="text-2xl font-bold">Registros de Ponto Flexível</h1>
         
         {/* Alternar entre modos de visualização */}
         <div className="flex space-x-2 mt-2 md:mt-0">
           <button 
-            onClick={() => setModoVisualizacao('lista')}
+            onClick={() => alterarModoVisualizacao('lista')}
             className={`px-3 py-1 rounded ${modoVisualizacao === 'lista' ? 'bg-purple-600' : 'bg-purple-800'} transition-colors`}
           >
             <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -1087,7 +1017,7 @@ const PontoBatidoFlexivel = () => {
             </svg>
           </button>
           <button 
-            onClick={() => setModoVisualizacao('calendario')}
+            onClick={() => alterarModoVisualizacao('calendario')}
             className={`px-3 py-1 rounded ${modoVisualizacao === 'calendario' ? 'bg-purple-600' : 'bg-purple-800'} transition-colors`}
           >
             <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -1095,7 +1025,7 @@ const PontoBatidoFlexivel = () => {
             </svg>
           </button>
           <button 
-            onClick={() => setModoVisualizacao('dashboard')}
+            onClick={() => alterarModoVisualizacao('dashboard')}
             className={`px-3 py-1 rounded ${modoVisualizacao === 'dashboard' ? 'bg-purple-600' : 'bg-purple-800'} transition-colors`}
           >
             <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -1105,23 +1035,21 @@ const PontoBatidoFlexivel = () => {
         </div>
       </div>
       
-      {/* Barra de ações - INTEGRADA COM API */}
+      {/* Barra de ações */}
       <div className="flex flex-wrap gap-3 mb-6">
         <button 
           onClick={() => setMostrarAdicionarRegistroModal(true)}
           className="bg-purple-600 hover:bg-purple-700 text-white font-medium py-2 px-4 rounded flex items-center"
-          disabled={loading}
         >
           <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
           </svg>
-          {loading ? 'Carregando...' : 'Adicionar Registro'}
+          Adicionar Registro
         </button>
         
         <button 
           onClick={() => setMostrarConfigRegrasModal(true)}
           className="bg-purple-600 hover:bg-purple-700 text-white font-medium py-2 px-4 rounded flex items-center"
-          disabled={loading}
         >
           <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
@@ -1131,26 +1059,21 @@ const PontoBatidoFlexivel = () => {
         </button>
         
         <button 
-          onClick={async () => {
-            setLoading(true);
-            await Promise.all([
-              carregarRegistrosPonto(),
-              carregarFuncionarios()
-            ]);
-            setLoading(false);
-            alert(`Dados atualizados: ${pontoRegistros.length} registros, ${allFuncionarios.length} funcionários.`);
+          onClick={() => {
+            const funcionarios = getAllPossibleFuncionarios();
+            setAllFuncionarios(funcionarios);
+            alert(`Lista atualizada: ${funcionarios.length} funcionários encontrados.`);
           }}
           className="bg-purple-600 hover:bg-purple-700 text-white font-medium py-2 px-4 rounded flex items-center"
-          disabled={loading}
         >
           <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
           </svg>
-          {loading ? 'Atualizando...' : `Atualizar (${pontoRegistros.length})`}
+          Atualizar Lista ({allFuncionarios.length})
         </button>
       </div>
       
-      {/* Filtros - TODOS INICIAM VAZIOS (= "Todos") */}
+      {/* Filtros */}
       <div className="bg-purple-900 bg-opacity-40 rounded-lg p-4 mb-6">
         <h2 className="text-xl font-semibold mb-4">Filtros</h2>
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
@@ -1158,10 +1081,10 @@ const PontoBatidoFlexivel = () => {
             <label className="block text-sm text-purple-300 mb-1">Data</label>
             <select
               className="w-full bg-purple-800 border border-purple-700 rounded-md p-2 text-white"
-              value={filtros.data} // = '' = "Todas as datas" selecionado
+              value={filtros.data}
               onChange={(e) => setFiltros({...filtros, data: e.target.value})}
             >
-              <option value="">📅 Todas as datas</option>
+              <option value="">Todas as datas</option>
               {datas.map((data, index) => (
                 <option key={index} value={data}>{data}</option>
               ))}
@@ -1173,10 +1096,10 @@ const PontoBatidoFlexivel = () => {
             </label>
             <select
               className="w-full bg-purple-800 border border-purple-700 rounded-md p-2 text-white"
-              value={filtros.funcionario} // = '' = "Todos os funcionários" selecionado
+              value={filtros.funcionario}
               onChange={(e) => setFiltros({...filtros, funcionario: e.target.value})}
             >
-              <option value="">👥 Todos os funcionários</option>
+              <option value="">Todos os funcionários</option>
               {funcionarios.map((funcionario, index) => (
                 <option key={index} value={funcionario}>{funcionario}</option>
               ))}
@@ -1186,10 +1109,10 @@ const PontoBatidoFlexivel = () => {
             <label className="block text-sm text-purple-300 mb-1">Status</label>
             <select
               className="w-full bg-purple-800 border border-purple-700 rounded-md p-2 text-white"
-              value={filtros.status} // = '' = "Todos os status" selecionado
+              value={filtros.status}
               onChange={(e) => setFiltros({...filtros, status: e.target.value})}
             >
-              <option value="">🔄 Todos os status</option>
+              <option value="">Todos os status</option>
               <option value="regular">Regular</option>
               <option value="atrasado">Atrasado</option>
               <option value="hora extra">Hora Extra</option>
@@ -1204,66 +1127,17 @@ const PontoBatidoFlexivel = () => {
             <label className="block text-sm text-purple-300 mb-1">Modelo de Trabalho</label>
             <select
               className="w-full bg-purple-800 border border-purple-700 rounded-md p-2 text-white"
-              value={filtros.modeloTrabalho} // = '' = "Todos os modelos" selecionado
+              value={filtros.modeloTrabalho}
               onChange={(e) => setFiltros({...filtros, modeloTrabalho: e.target.value})}
             >
-              <option value="">⚙️ Todos os modelos</option>
-              {Object.entries(modelosTrabalho).map(([id, modelo]) => (
+              <option value="">Todos os modelos</option>
+              {Object.entries(MODELOS_TRABALHO).map(([id, modelo]) => (
                 <option key={id} value={id}>{modelo.nome}</option>
               ))}
             </select>
           </div>
         </div>
-        
-        {/* Indicador visual dos filtros ativos */}
-        <div className="mt-4 flex flex-wrap gap-2">
-          {filtros.data && (
-            <span className="bg-purple-600 px-2 py-1 rounded text-xs">
-              📅 Data: {filtros.data}
-              <button 
-                onClick={() => setFiltros({...filtros, data: ''})} 
-                className="ml-1 text-purple-200 hover:text-white"
-              >×</button>
-            </span>
-          )}
-          {filtros.funcionario && (
-            <span className="bg-purple-600 px-2 py-1 rounded text-xs">
-              👤 {filtros.funcionario}
-              <button 
-                onClick={() => setFiltros({...filtros, funcionario: ''})} 
-                className="ml-1 text-purple-200 hover:text-white"
-              >×</button>
-            </span>
-          )}
-          {filtros.status && (
-            <span className="bg-purple-600 px-2 py-1 rounded text-xs">
-              🔄 {filtros.status}
-              <button 
-                onClick={() => setFiltros({...filtros, status: ''})} 
-                className="ml-1 text-purple-200 hover:text-white"
-              >×</button>
-            </span>
-          )}
-          {filtros.modeloTrabalho && (
-            <span className="bg-purple-600 px-2 py-1 rounded text-xs">
-              ⚙️ {modelosTrabalho[filtros.modeloTrabalho]?.nome}
-              <button 
-                onClick={() => setFiltros({...filtros, modeloTrabalho: ''})} 
-                className="ml-1 text-purple-200 hover:text-white"
-              >×</button>
-            </span>
-          )}
-          {(filtros.data || filtros.funcionario || filtros.status || filtros.modeloTrabalho) && (
-            <button 
-              onClick={() => setFiltros({data: '', funcionario: '', status: '', modeloTrabalho: ''})}
-              className="bg-red-600 hover:bg-red-700 px-2 py-1 rounded text-xs"
-            >
-              🗑️ Limpar todos
-            </button>
-          )}
-        </div>
       </div>
-
       {/* Conteúdo baseado no modo de visualização */}
       {modoVisualizacao === 'lista' && (
         <div className="overflow-x-auto">
@@ -1287,10 +1161,10 @@ const PontoBatidoFlexivel = () => {
                   <tr key={registro.id} className="border-b border-purple-700 hover:bg-purple-700 hover:bg-opacity-30">
                     <td className="px-4 py-3">{registro.funcionarioNome}</td>
                     <td className="px-4 py-3">{registro.data}</td>
-                    <td className="px-4 py-3">{modelosTrabalho[registro.modeloTrabalho]?.nome || 'Personalizado'}</td>
+                    <td className="px-4 py-3">{MODELOS_TRABALHO[registro.modeloTrabalho]?.nome || 'Personalizado'}</td>
                     <td className="px-4 py-3">
                       <div className="space-y-2">
-                        {registro.registros && registro.registros.map((r, index) => (
+                        {registro.registros.map((r, index) => (
                           <div key={index} className="flex items-center space-x-2">
                             {editandoRegistro && editandoRegistro.registroId === registro.id && editandoRegistro.indiceRegistro === index ? (
                               <div className="flex items-center space-x-2">
@@ -1306,7 +1180,6 @@ const PontoBatidoFlexivel = () => {
                                     onClick={() => salvarEdicaoPonto(registro.id, index, STATUS_APROVADO)}
                                     className="text-green-500 hover:text-green-400"
                                     title="Aprovar registro"
-                                    disabled={loading}
                                   >
                                     <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
@@ -1316,7 +1189,6 @@ const PontoBatidoFlexivel = () => {
                                     onClick={() => salvarEdicaoPonto(registro.id, index, STATUS_REJEITADO)}
                                     className="text-red-500 hover:text-red-400"
                                     title="Rejeitar registro"
-                                    disabled={loading}
                                   >
                                     <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
@@ -1326,7 +1198,6 @@ const PontoBatidoFlexivel = () => {
                                     onClick={() => salvarEdicaoPonto(registro.id, index, STATUS_AJUSTADO)}
                                     className="text-blue-500 hover:text-blue-400"
                                     title="Ajustar registro"
-                                    disabled={loading}
                                   >
                                     <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
@@ -1353,7 +1224,6 @@ const PontoBatidoFlexivel = () => {
                                 <button
                                   onClick={() => iniciarEdicaoPonto(registro.id, index)}
                                   className="text-purple-300 hover:text-white"
-                                  title="Editar registro"
                                 >
                                   <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
@@ -1373,12 +1243,11 @@ const PontoBatidoFlexivel = () => {
                     </td>
                     <td className="px-4 py-3">
                       <div className="flex flex-wrap gap-2">
-                        {registro.registros && registro.registros.some(r => r.status === STATUS_PENDENTE) && (
+                        {registro.registros.some(r => r.status === STATUS_PENDENTE) && (
                           <button
                             onClick={() => notificarFuncionario(registro.id)}
                             className="bg-purple-600 hover:bg-purple-700 text-white rounded p-1 text-xs flex items-center"
                             title="Notificar funcionário"
-                            disabled={loading}
                           >
                             <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
@@ -1386,12 +1255,11 @@ const PontoBatidoFlexivel = () => {
                             Notificar
                           </button>
                         )}
-                        {registro.registros && registro.registros.some(r => r.status === STATUS_PENDENTE) && (
+                        {registro.registros.some(r => r.status === STATUS_PENDENTE) && (
                           <button
                             onClick={() => abrirJustificativaModal(registro.id)}
                             className="bg-orange-600 hover:bg-orange-700 text-white rounded p-1 text-xs flex items-center"
                             title="Justificar faltas"
-                            disabled={loading}
                           >
                             <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
@@ -1403,7 +1271,6 @@ const PontoBatidoFlexivel = () => {
                           onClick={() => iniciarEdicaoObservacao(registro.id)}
                           className="bg-indigo-600 hover:bg-indigo-700 text-white rounded p-1 text-xs flex items-center"
                           title="Adicionar observação"
-                          disabled={loading}
                         >
                           <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
@@ -1414,7 +1281,7 @@ const PontoBatidoFlexivel = () => {
                           onClick={() => exportarRegistro(registro.id)}
                           className="bg-blue-600 hover:bg-blue-700 text-white rounded p-1 text-xs flex items-center"
                           title="Exportar registro"
-                          disabled={exportandoPdf || loading}
+                          disabled={exportandoPdf}
                         >
                           <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
@@ -1429,7 +1296,7 @@ const PontoBatidoFlexivel = () => {
               {registrosOrdenados.length === 0 && (
                 <tr>
                   <td colSpan="7" className="px-4 py-6 text-center text-purple-300">
-                    {loading ? 'Carregando registros...' : 'Nenhum registro encontrado com os filtros selecionados.'}
+                    Nenhum registro encontrado com os filtros selecionados.
                   </td>
                 </tr>
               )}
@@ -1437,37 +1304,404 @@ const PontoBatidoFlexivel = () => {
           </table>
         </div>
       )}
-
-      {/* Dashboard Simples */}
+      {/* Visualização de Calendário */}
+      {modoVisualizacao === 'calendario' && (
+        <div className="rounded-lg border border-purple-700 overflow-hidden">
+          <div className="px-6 py-4 bg-purple-900 border-b border-purple-700">
+            <h3 className="text-xl font-semibold">Calendário de Ponto</h3>
+            <p className="text-sm text-purple-300 mt-1">Selecione um funcionário para visualizar seu calendário completo</p>
+          </div>
+          
+          <div className="p-6 bg-purple-800 bg-opacity-30">
+            {!filtros.funcionario ? (
+              <div className="text-center py-10">
+                <p className="mb-4">Selecione um funcionário no filtro acima para visualizar o calendário</p>
+                <button 
+                  onClick={() => setMostrarAdicionarRegistroModal(true)}
+                  className="bg-purple-600 hover:bg-purple-700 text-white font-medium py-2 px-4 rounded inline-flex items-center"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
+                  </svg>
+                  Adicionar Novo Registro
+                </button>
+              </div>
+            ) : (
+              <div>
+                <h4 className="text-lg font-semibold mb-4">Calendário de {filtros.funcionario}</h4>
+                
+                <div className="grid grid-cols-7 gap-1 mb-1">
+                  {['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'].map(dia => (
+                    <div key={dia} className="text-center text-xs font-semibold py-1">{dia}</div>
+                  ))}
+                </div>
+                
+                <div className="grid grid-cols-7 gap-1">
+                  {/* Aqui seria renderizado o calendário baseado nos registros do funcionário */}
+                  {Array(31).fill(0).map((_, i) => {
+                    const dia = i + 1;
+                    const registrosDoDia = registrosOrdenados.filter(r => {
+                      const [diaR] = r.data.split('/').map(Number);
+                      return diaR === dia && r.funcionarioNome === filtros.funcionario;
+                    });
+                    
+                    const temPendencia = registrosDoDia.some(r => r.registros.some(reg => reg.status === STATUS_PENDENTE));
+                    const temJustificativa = registrosDoDia.some(r => r.registros.some(reg => reg.status === 'falta justificada'));
+                    const todosAprovados = registrosDoDia.some(r => r.registros.every(reg => reg.status === STATUS_APROVADO || reg.status === 'regular'));
+                    
+                    let corFundo = 'bg-purple-800 bg-opacity-30';
+                    if (registrosDoDia.length > 0) {
+                      if (temPendencia) corFundo = 'bg-purple-600';
+                      else if (temJustificativa) corFundo = 'bg-orange-600';
+                      else if (todosAprovados) corFundo = 'bg-green-600';
+                    }
+                    
+                    return (
+                      <div 
+                        key={dia} 
+                        className={`p-2 rounded min-h-14 ${corFundo} hover:bg-opacity-80 cursor-pointer transition-colors`}
+                        onClick={() => {
+                          if (registrosDoDia.length > 0) {
+                            // Abrir modal com detalhes ou focar na lista
+                            setFiltros({...filtros, data: registrosDoDia[0].data});
+                            setModoVisualizacao('lista');
+                          } else {
+                            // Oferecer adicionar
+                            if (window.confirm(`Deseja adicionar registro para ${filtros.funcionario} no dia ${dia}?`)) {
+                              setNovoRegistroData({
+                                funcionarioId: allFuncionarios.find(f => f.nome === filtros.funcionario)?.id || '',
+                                data: `${dia.toString().padStart(2, '0')}/${new Date().getMonth() + 1}/${new Date().getFullYear()}`,
+                                modeloTrabalho: 'PADRAO'
+                              });
+                              setMostrarAdicionarRegistroModal(true);
+                            }
+                          }
+                        }}
+                      >
+                        <div className="text-xs font-bold">{dia}</div>
+                        {registrosDoDia.length > 0 && (
+                          <div className="mt-1 text-xs">
+                            {registrosDoDia.map(r => {
+                              const modelo = MODELOS_TRABALHO[r.modeloTrabalho];
+                              return (
+                                <div key={r.id} className="truncate">
+                                  {modelo.nome}
+                                </div>
+                              );
+                            })}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+      
+      {/* Visualização de Dashboard */}
       {modoVisualizacao === 'dashboard' && (
         <div className="bg-purple-900 bg-opacity-30 rounded-lg p-6">
           <h3 className="text-xl font-semibold mb-6">Dashboard de Ponto</h3>
           
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+            {/* Card de Registros Totais */}
             <div className="bg-purple-800 rounded-lg p-4 flex flex-col">
               <h4 className="text-sm text-purple-300 mb-1">Total de Registros</h4>
               <p className="text-3xl font-bold">{dadosDashboard.totalRegistros}</p>
+              <div className="mt-auto pt-4 text-xs text-purple-300">
+                Com filtros aplicados
+              </div>
             </div>
             
+            {/* Card de Registros Pendentes */}
             <div className="bg-purple-600 rounded-lg p-4 flex flex-col">
               <h4 className="text-sm text-purple-200 mb-1">Pendentes</h4>
               <p className="text-3xl font-bold">{dadosDashboard.totalPendentes}</p>
+              <div className="mt-auto pt-4 text-xs">
+                {dadosDashboard.totalPendentes > 0 && (
+                  <button 
+                    className="bg-purple-700 hover:bg-purple-800 px-2 py-1 rounded"
+                    onClick={() => {
+                      setFiltros({...filtros, status: STATUS_PENDENTE});
+                      setModoVisualizacao('lista');
+                    }}
+                  >
+                    Ver Pendentes
+                  </button>
+                )}
+              </div>
             </div>
             
+            {/* Card de Registros Aprovados */}
             <div className="bg-green-600 rounded-lg p-4 flex flex-col">
               <h4 className="text-sm text-green-200 mb-1">Aprovados</h4>
               <p className="text-3xl font-bold">{dadosDashboard.totalAprovados}</p>
+              <div className="mt-auto pt-4 text-xs text-green-200">
+                {Math.round((dadosDashboard.totalAprovados / dadosDashboard.totalRegistros) * 100)}% do total
+              </div>
             </div>
             
+            {/* Card de Faltas Justificadas */}
             <div className="bg-orange-600 rounded-lg p-4 flex flex-col">
               <h4 className="text-sm text-orange-200 mb-1">Justificados</h4>
               <p className="text-3xl font-bold">{dadosDashboard.totalJustificados}</p>
+              <div className="mt-auto pt-4 text-xs">
+                {dadosDashboard.totalJustificados > 0 && (
+                  <button 
+                    className="bg-orange-700 hover:bg-orange-800 px-2 py-1 rounded"
+                    onClick={() => {
+                      setFiltros({...filtros, status: 'falta justificada'});
+                      setModoVisualizacao('lista');
+                    }}
+                  >
+                    Ver Justificativas
+                  </button>
+                )}
+              </div>
+            </div>
+          </div>
+          
+          {/* Estatísticas por Modelo de Trabalho */}
+          <div className="bg-purple-800 bg-opacity-50 rounded-lg p-6 mb-6">
+            <h4 className="text-lg font-semibold mb-4">Registros por Modelo de Trabalho</h4>
+            
+            <div className="space-y-4">
+              {dadosDashboard.modelosTrabalho.map(modelo => (
+                <div key={modelo.id} className="flex items-center">
+                  <div className="w-40 text-sm">{modelo.nome}</div>
+                  <div className="flex-1 mx-4">
+                    <div className="w-full bg-purple-900 rounded-full h-4 overflow-hidden">
+                      <div 
+                        className="bg-purple-500 h-4" 
+                        style={{width: `${(modelo.total / dadosDashboard.totalRegistros) * 100}%`}}
+                      ></div>
+                    </div>
+                  </div>
+                  <div className="w-20 text-right">{modelo.total}</div>
+                  <div className="w-20 text-right text-sm">
+                    {Math.round((modelo.total / dadosDashboard.totalRegistros) * 100)}%
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+          
+          {/* Ações Rápidas */}
+          <div className="bg-purple-800 bg-opacity-50 rounded-lg p-6">
+            <h4 className="text-lg font-semibold mb-4">Ações Rápidas</h4>
+            
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <button
+                onClick={() => {
+                  setFiltros({...filtros, status: STATUS_PENDENTE});
+                  setModoVisualizacao('lista');
+                }}
+                className="bg-purple-600 hover:bg-purple-700 text-white font-medium py-3 px-4 rounded flex items-center"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+                Ver Registros Pendentes
+              </button>
+              
+              <button
+                onClick={() => {
+                  const pendentes = registrosOrdenados.filter(r => r.registros.some(reg => reg.status === STATUS_PENDENTE));
+                  if (pendentes.length === 0) {
+                    alert('Não há registros pendentes para notificar.');
+                    return;
+                  }
+                  
+                  if (window.confirm(`Deseja notificar todos os ${pendentes.length} funcionários com registros pendentes?`)) {
+                    // Aqui implementaria a notificação em massa
+                    alert(`Notificações enviadas para ${pendentes.length} funcionários.`);
+                  }
+                }}
+                className="bg-indigo-600 hover:bg-indigo-700 text-white font-medium py-3 px-4 rounded flex items-center"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
+                </svg>
+                Notificar Todos Pendentes
+              </button>
+              
+              <button
+                onClick={() => {
+                  setFiltros({...filtros});
+                  setModoVisualizacao('calendario');
+                }}
+                className="bg-green-600 hover:bg-green-700 text-white font-medium py-3 px-4 rounded flex items-center"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                </svg>
+                Ver Calendário
+              </button>
+              
+              <button
+                onClick={() => {
+                  setExportandoPdf(true);
+                  setTimeout(() => {
+                    // Simular exportação
+                    setExportandoPdf(false);
+                    alert('Relatório exportado com sucesso!');
+                  }, 1500);
+                }}
+                className="bg-blue-600 hover:bg-blue-700 text-white font-medium py-3 px-4 rounded flex items-center"
+                disabled={exportandoPdf}
+              >
+                {exportandoPdf ? (
+                  <>
+                    <svg className="animate-spin h-5 w-5 mr-2" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                    </svg>
+                    Exportando...
+                  </>
+                ) : (
+                  <>
+                    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                    </svg>
+                    Exportar Relatório Completo
+                  </>
+                )}
+              </button>
             </div>
           </div>
         </div>
       )}
-
-      {/* Modal de Adicionar Registro - INTEGRADO COM API */}
+      {/* Modal de Notificação Personalizada */}
+      {mostrarNotificacaoModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-purple-900 p-6 rounded-lg shadow-lg w-full max-w-lg">
+            <h2 className="text-xl font-bold mb-4">Enviar Notificação</h2>
+            <p className="text-sm mb-4">Enviando para: <strong>{funcionarioSelecionado?.nome}</strong> - {funcionarioSelecionado?.data}</p>
+            
+            <div className="mb-4">
+              <label className="block text-sm text-purple-300 mb-2">Mensagem:</label>
+              <textarea
+                className="w-full bg-purple-800 border border-purple-700 rounded-md p-3 text-white h-32"
+                value={notificacaoPersonalizada}
+                onChange={(e) => setNotificacaoPersonalizada(e.target.value)}
+                placeholder="Digite a mensagem para o funcionário..."
+              ></textarea>
+            </div>
+            
+            <div className="flex justify-end space-x-3">
+              <button
+                onClick={() => setMostrarNotificacaoModal(false)}
+                className="bg-gray-600 hover:bg-gray-700 text-white px-4 py-2 rounded"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={enviarNotificacaoPersonalizada}
+                className="bg-purple-600 hover:bg-purple-700 text-white px-4 py-2 rounded"
+              >
+                Enviar Notificação
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      
+      {/* Modal de Justificativa */}
+      {mostrarJustificativaModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-purple-900 p-6 rounded-lg shadow-lg w-full max-w-lg">
+            <h2 className="text-xl font-bold mb-4">Registrar Justificativa</h2>
+            
+            <div className="mb-4">
+              <label className="block text-sm text-purple-300 mb-2">Tipo de Justificativa:</label>
+              <select
+                className="w-full bg-purple-800 border border-purple-700 rounded-md p-2 text-white"
+                value={justificativaData.tipo}
+                onChange={(e) => setJustificativaData({...justificativaData, tipo: e.target.value})}
+              >
+                {TIPOS_JUSTIFICATIVA.map((tipo, index) => (
+                  <option key={index} value={tipo}>{tipo}</option>
+                ))}
+              </select>
+            </div>
+            
+            <div className="mb-4">
+              <label className="block text-sm text-purple-300 mb-2">Detalhamento:</label>
+              <textarea
+                className="w-full bg-purple-800 border border-purple-700 rounded-md p-3 text-white h-24"
+                value={justificativaData.detalhamento}
+                onChange={(e) => setJustificativaData({...justificativaData, detalhamento: e.target.value})}
+                placeholder="Descreva os detalhes da justificativa..."
+              ></textarea>
+            </div>
+            
+            <div className="mb-6">
+              <label className="flex items-center">
+                <input
+                  type="checkbox"
+                  className="form-checkbox h-5 w-5 text-purple-600 rounded"
+                  checked={justificativaData.temComprovante}
+                  onChange={(e) => setJustificativaData({...justificativaData, temComprovante: e.target.checked})}
+                />
+                <span className="ml-2 text-sm">Possui comprovante</span>
+              </label>
+            </div>
+            
+            <div className="flex justify-end space-x-3">
+              <button
+                onClick={() => setMostrarJustificativaModal(false)}
+                className="bg-gray-600 hover:bg-gray-700 text-white px-4 py-2 rounded"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={salvarJustificativa}
+                className="bg-orange-600 hover:bg-orange-700 text-white px-4 py-2 rounded"
+              >
+                Registrar Justificativa
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      
+      {/* Modal de Edição de Observação */}
+      {editandoObservacao !== null && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-purple-900 p-6 rounded-lg shadow-lg w-full max-w-lg">
+            <h2 className="text-xl font-bold mb-4">Adicionar Observação</h2>
+            
+            <div className="mb-4">
+              <label className="block text-sm text-purple-300 mb-2">Observação:</label>
+              <textarea
+                ref={observacaoInputRef}
+                className="w-full bg-purple-800 border border-purple-700 rounded-md p-3 text-white h-32"
+                placeholder="Digite sua observação sobre este registro..."
+              ></textarea>
+            </div>
+            
+            <div className="flex justify-end space-x-3">
+              <button
+                onClick={() => setEditandoObservacao(null)}
+                className="bg-gray-600 hover:bg-gray-700 text-white px-4 py-2 rounded"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={salvarObservacaoEditar}
+                className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded"
+              >
+                Salvar Observação
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      
+      {/* Modal de Adicionar Registro */}
       {mostrarAdicionarRegistroModal && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
           <div className="bg-purple-900 p-6 rounded-lg shadow-lg w-full max-w-lg">
@@ -1505,8 +1739,7 @@ const PontoBatidoFlexivel = () => {
                 value={novoRegistroData.modeloTrabalho}
                 onChange={(e) => setNovoRegistroData({...novoRegistroData, modeloTrabalho: e.target.value})}
               >
-                <option value="">Selecione um modelo</option>
-                {Object.entries(modelosTrabalho).map(([id, modelo]) => (
+                {Object.entries(MODELOS_TRABALHO).map(([id, modelo]) => (
                   <option key={id} value={id}>{modelo.nome}</option>
                 ))}
               </select>
@@ -1516,23 +1749,20 @@ const PontoBatidoFlexivel = () => {
               <button
                 onClick={() => setMostrarAdicionarRegistroModal(false)}
                 className="bg-gray-600 hover:bg-gray-700 text-white px-4 py-2 rounded"
-                disabled={loading}
               >
                 Cancelar
               </button>
               <button
                 onClick={adicionarNovoRegistro}
                 className="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded"
-                disabled={loading}
               >
-                {loading ? 'Adicionando...' : 'Adicionar'}
+                Adicionar
               </button>
             </div>
           </div>
         </div>
       )}
-
-      {/* Modal de Configurações - INTEGRADO COM API */}
+      {/* Modal de Configurações */}
       {mostrarConfigRegrasModal && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
           <div className="bg-purple-900 p-6 rounded-lg shadow-lg w-full max-w-2xl">
@@ -1603,150 +1833,14 @@ const PontoBatidoFlexivel = () => {
               <button
                 onClick={() => setMostrarConfigRegrasModal(false)}
                 className="bg-gray-600 hover:bg-gray-700 text-white px-4 py-2 rounded"
-                disabled={loading}
               >
                 Cancelar
               </button>
               <button
                 onClick={() => salvarConfiguracoes(configPersonalizada)}
                 className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded"
-                disabled={loading}
               >
-                {loading ? 'Salvando...' : 'Salvar Configurações'}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Modal de Notificação Personalizada - INTEGRADO COM API */}
-      {mostrarNotificacaoModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-purple-900 p-6 rounded-lg shadow-lg w-full max-w-lg">
-            <h2 className="text-xl font-bold mb-4">Enviar Notificação</h2>
-            <p className="text-sm mb-4">Enviando para: <strong>{funcionarioSelecionado?.nome}</strong> - {funcionarioSelecionado?.data}</p>
-            
-            <div className="mb-4">
-              <label className="block text-sm text-purple-300 mb-2">Mensagem:</label>
-              <textarea
-                className="w-full bg-purple-800 border border-purple-700 rounded-md p-3 text-white h-32"
-                value={notificacaoPersonalizada}
-                onChange={(e) => setNotificacaoPersonalizada(e.target.value)}
-                placeholder="Digite a mensagem para o funcionário..."
-              ></textarea>
-            </div>
-            
-            <div className="flex justify-end space-x-3">
-              <button
-                onClick={() => setMostrarNotificacaoModal(false)}
-                className="bg-gray-600 hover:bg-gray-700 text-white px-4 py-2 rounded"
-                disabled={loading}
-              >
-                Cancelar
-              </button>
-              <button
-                onClick={enviarNotificacaoPersonalizada}
-                className="bg-purple-600 hover:bg-purple-700 text-white px-4 py-2 rounded"
-                disabled={loading}
-              >
-                {loading ? 'Enviando...' : 'Enviar Notificação'}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-      
-      {/* Modal de Justificativa - INTEGRADO COM API */}
-      {mostrarJustificativaModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-purple-900 p-6 rounded-lg shadow-lg w-full max-w-lg">
-            <h2 className="text-xl font-bold mb-4">Registrar Justificativa</h2>
-            
-            <div className="mb-4">
-              <label className="block text-sm text-purple-300 mb-2">Tipo de Justificativa:</label>
-              <select
-                className="w-full bg-purple-800 border border-purple-700 rounded-md p-2 text-white"
-                value={justificativaData.tipo}
-                onChange={(e) => setJustificativaData({...justificativaData, tipo: e.target.value})}
-              >
-                <option value="">Selecione um tipo</option>
-                {TIPOS_JUSTIFICATIVA.map((tipo, index) => (
-                  <option key={index} value={tipo.id}>{tipo.nome}</option>
-                ))}
-              </select>
-            </div>
-            
-            <div className="mb-4">
-              <label className="block text-sm text-purple-300 mb-2">Detalhamento:</label>
-              <textarea
-                className="w-full bg-purple-800 border border-purple-700 rounded-md p-3 text-white h-24"
-                value={justificativaData.detalhamento}
-                onChange={(e) => setJustificativaData({...justificativaData, detalhamento: e.target.value})}
-                placeholder="Descreva os detalhes da justificativa..."
-              ></textarea>
-            </div>
-            
-            <div className="mb-6">
-              <label className="flex items-center">
-                <input
-                  type="checkbox"
-                  className="form-checkbox h-5 w-5 text-purple-600 rounded"
-                  checked={justificativaData.temComprovante}
-                  onChange={(e) => setJustificativaData({...justificativaData, temComprovante: e.target.checked})}
-                />
-                <span className="ml-2 text-sm">Possui comprovante</span>
-              </label>
-            </div>
-            
-            <div className="flex justify-end space-x-3">
-              <button
-                onClick={() => setMostrarJustificativaModal(false)}
-                className="bg-gray-600 hover:bg-gray-700 text-white px-4 py-2 rounded"
-                disabled={loading}
-              >
-                Cancelar
-              </button>
-              <button
-                onClick={salvarJustificativa}
-                className="bg-orange-600 hover:bg-orange-700 text-white px-4 py-2 rounded"
-                disabled={loading}
-              >
-                {loading ? 'Registrando...' : 'Registrar Justificativa'}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-      
-      {/* Modal de Edição de Observação - INTEGRADO COM API */}
-      {editandoObservacao !== null && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-purple-900 p-6 rounded-lg shadow-lg w-full max-w-lg">
-            <h2 className="text-xl font-bold mb-4">Adicionar Observação</h2>
-            
-            <div className="mb-4">
-              <label className="block text-sm text-purple-300 mb-2">Observação:</label>
-              <textarea
-                ref={observacaoInputRef}
-                className="w-full bg-purple-800 border border-purple-700 rounded-md p-3 text-white h-32"
-                placeholder="Digite sua observação sobre este registro..."
-              ></textarea>
-            </div>
-            
-            <div className="flex justify-end space-x-3">
-              <button
-                onClick={() => setEditandoObservacao(null)}
-                className="bg-gray-600 hover:bg-gray-700 text-white px-4 py-2 rounded"
-                disabled={loading}
-              >
-                Cancelar
-              </button>
-              <button
-                onClick={salvarObservacaoEditar}
-                className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded"
-                disabled={loading}
-              >
-                {loading ? 'Salvando...' : 'Salvar Observação'}
+                Salvar Configurações
               </button>
             </div>
           </div>

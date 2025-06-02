@@ -1,47 +1,50 @@
-// ========== ProtectedRoute.js - COMPONENTE DE PROTEÇÃO DE ROTAS ==========
 import React from 'react';
 import { Navigate, useLocation } from 'react-router-dom';
 
-const ProtectedRoute = ({ children, requireAuth = true, requireAdmin = false }) => {
+const ProtectedRoute = ({ children, requireAdmin = false }) => {
   const location = useLocation();
-
-  // Verificar se há dados de usuário
-  const user = JSON.parse(localStorage.getItem('user') || '{}');
-  const token = localStorage.getItem('token');
   
-  console.log('🛡️ ProtectedRoute verificação:', {
-    currentPath: location.pathname,
-    requireAuth,
-    requireAdmin,
-    userExists: !!user.email,
-    userAuthenticated: user.authenticated,
-    hasToken: !!token,
-    userRoles: user.roles,
-    isAdmin: user.isAdmin
-  });
-
-  // Se requer autenticação e não está autenticado
-  if (requireAuth) {
-    if (!user.authenticated || !token || !user.email) {
-      console.log('❌ Usuário não autenticado - redirecionando para login');
-      return <Navigate to="/login" state={{ from: location }} replace />;
-    }
+  // Verificar token
+  const token = localStorage.getItem('token');
+  if (!token) {
+    return <Navigate to="/login" replace />;
   }
 
-  // Se requer admin e não é admin
-  if (requireAdmin) {
-    const userRoles = Array.isArray(user.roles) ? user.roles : [user.roles].filter(Boolean);
-    const isAdmin = userRoles.some(role => 
-      role && typeof role === 'string' && role.toUpperCase() === 'ADMIN'
-    ) || user.isAdmin === true || user.email === 'admin@cuidaemprego.com';
-
-    if (!isAdmin) {
-      console.log('❌ Usuário não é admin - redirecionando para dashboard');
-      return <Navigate to="/dashboard" replace />;
-    }
+  // Verificar usuário
+  const userStr = localStorage.getItem('user');
+  if (!userStr) {
+    return <Navigate to="/login" replace />;
   }
 
-  console.log('✅ Acesso autorizado');
+  let user;
+  try {
+    user = JSON.parse(userStr);
+  } catch (error) {
+    localStorage.clear();
+    return <Navigate to="/login" replace />;
+  }
+
+  // Verificar se está autenticado
+  if (!user.authenticated) {
+    return <Navigate to="/login" replace />;
+  }
+
+  // Verificar se é admin
+  const isAdmin = user.isAdmin === true || 
+                  user.email === 'admin@cuidaemprego.com' || 
+                  user.username === 'admin' ||
+                  (user.roles && user.roles.some(role => 
+                    typeof role === 'string' && role.toUpperCase() === 'ADMIN'
+                  ));
+
+  // Se rota requer admin mas usuário não é admin
+  if (requireAdmin && !isAdmin) {
+    return <Navigate to="/dashboard" replace />;
+  }
+
+  // CORREÇÃO: Admin pode acessar dashboard de funcionário
+  // Não redirecionar admin se ele está acessando /dashboard
+  
   return children;
 };
 

@@ -335,53 +335,116 @@ const AdminDashboard = () => {
         </div>
       </div>
       
-    {/* ✅ HEADER PRINCIPAL COM NOME CORRETO */}
-<header className="bg-purple-900 bg-opacity-80 shadow-lg sticky top-0 z-10">
-  <div className="container mx-auto px-4 py-3 flex justify-between items-center">
-    <div className="flex items-center">
-      <div className="bg-purple-600 rounded-full p-1 mr-2">
-        <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 13.255A23.931 23.931 0 0112 15c-3.183 0-6.22-.62-9-1.745M16 6V4a2 2 0 00-2-2h-4a2 2 0 00-2 2v2m4 6h.01M5 20h14a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
-        </svg>
-      </div>
-      <span className="text-xl font-bold">CuidaEmprego | Administrador</span>
-    </div>
-    
-    <div className="flex items-center space-x-4">
-      {/* Resto do código das notificações... */}
-      
-      {/* ✅ DROPDOWN DO PERFIL COM NOME CORRETO */}
-      <div className="relative">
-        <button
-          onClick={() => setShowProfileMenu(!showProfileMenu)}
-          className="flex items-center space-x-2 focus:outline-none"
-        >
-          <div className="w-8 h-8 bg-purple-600 rounded-full flex items-center justify-center">
-            <span className="font-medium text-sm">A</span>
-          </div>
-          {/* ✅ SEMPRE MOSTRAR "Admin" PARA ADMINISTRADORES */}
-          <span className="hidden md:inline-block">Admin</span>
-          <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-          </svg>
-        </button>
-        
-        {showProfileMenu && (
-          <div className="absolute right-0 mt-2 w-48 bg-purple-800 rounded-md shadow-lg py-1 z-20">
-            <div className="px-4 py-2 border-b border-purple-700">
-              {/* ✅ SEMPRE MOSTRAR "Admin" NO DROPDOWN */}
-              <p className="text-sm font-medium">Admin</p>
-              <p className="text-xs text-purple-300">{userData.email}</p>
+      {/* ✅ HEADER PRINCIPAL */}
+      <header className="bg-purple-900 bg-opacity-80 shadow-lg sticky top-0 z-10">
+        <div className="container mx-auto px-4 py-3 flex justify-between items-center">
+          <div className="flex items-center">
+            <div className="bg-purple-600 rounded-full p-1 mr-2">
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 13.255A23.931 23.931 0 0112 15c-3.183 0-6.22-.62-9-1.745M16 6V4a2 2 0 00-2-2h-4a2 2 0 00-2 2v2m4 6h.01M5 20h14a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+              </svg>
             </div>
-            <a href="#" className="block px-4 py-2 text-sm hover:bg-purple-700">Meu Perfil</a>
-            <a href="#" className="block px-4 py-2 text-sm hover:bg-purple-700">Configurações</a>
-            <button onClick={handleLogout} className="block w-full text-left px-4 py-2 text-sm hover:bg-purple-700">Sair</button>
+            <span className="text-xl font-bold">CuidaEmprego | Administrador</span>
           </div>
-        )}
-      </div>
-    </div>
-  </div>
-</header>
+          
+          <div className="flex items-center space-x-4">
+            {/* ✅ DROPDOWN DE NOTIFICAÇÕES */}
+            <div className="relative">
+              <button
+                onClick={() => setShowNotificationsMenu(!showNotificationsMenu)}
+                className="relative focus:outline-none"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
+                </svg>
+                {unreadNotificationsCount > 0 && (
+                  <span className="absolute -top-1 -right-1 bg-red-500 rounded-full w-4 h-4 text-xs flex items-center justify-center">
+                    {unreadNotificationsCount}
+                  </span>
+                )}
+              </button>
+              
+              {showNotificationsMenu && (
+                <div className="absolute right-0 mt-2 w-80 bg-purple-800 rounded-md shadow-lg py-1 z-20">
+                  <div className="flex justify-between items-center px-4 py-2 border-b border-purple-700">
+                    <h3 className="font-medium">Notificações</h3>
+                    {unreadNotificationsCount > 0 && (
+                      <button
+                        onClick={markAllNotificationsAsRead}
+                        className="text-xs text-purple-300 hover:text-white"
+                      >
+                        Marcar todas como lidas
+                      </button>
+                    )}
+                  </div>
+                  <div className="max-h-80 overflow-y-auto">
+                    {notifications.length === 0 ? (
+                      <p className="px-4 py-2 text-sm text-purple-300">Sem notificações.</p>
+                    ) : (
+                      notifications.map(notification => (
+                        <div
+                          key={notification.id}
+                          className={`px-4 py-2 border-b border-purple-700 cursor-pointer hover:bg-purple-700 ${!notification.read ? 'bg-purple-700 bg-opacity-50' : ''}`}
+                          onClick={() => markNotificationAsRead(notification.id)}
+                        >
+                          <div className="flex items-start justify-between">
+                            <div className="flex-1">
+                              <p className="text-sm">{notification.message}</p>
+                              <p className="text-xs text-purple-300">{notification.date}</p>
+                            </div>
+                            {notification.urgent && (
+                              <span className="ml-2 bg-red-500 text-white text-xs px-1 rounded">Urgente</span>
+                            )}
+                          </div>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                  <div className="px-4 py-2 text-center">
+                    <button
+                      onClick={() => {
+                        setActiveTab('notificacoes');
+                        setShowNotificationsMenu(false);
+                      }}
+                      className="text-xs text-purple-300 hover:text-white"
+                    >
+                      Ver todas notificações
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+            
+            {/* ✅ DROPDOWN DO PERFIL */}
+            <div className="relative">
+              <button
+                onClick={() => setShowProfileMenu(!showProfileMenu)}
+                className="flex items-center space-x-2 focus:outline-none"
+              >
+                <div className="w-8 h-8 bg-purple-600 rounded-full flex items-center justify-center">
+                  <span className="font-medium text-sm">{userData.initials}</span>
+                </div>
+                <span className="hidden md:inline-block">{userData.name}</span>
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                </svg>
+              </button>
+              
+              {showProfileMenu && (
+                <div className="absolute right-0 mt-2 w-48 bg-purple-800 rounded-md shadow-lg py-1 z-20">
+                  <div className="px-4 py-2 border-b border-purple-700">
+                    <p className="text-sm font-medium">{userData.name}</p>
+                    <p className="text-xs text-purple-300">{userData.email}</p>
+                  </div>
+                  <a href="#" className="block px-4 py-2 text-sm hover:bg-purple-700">Meu Perfil</a>
+                  <a href="#" className="block px-4 py-2 text-sm hover:bg-purple-700">Configurações</a>
+                  <button onClick={handleLogout} className="block w-full text-left px-4 py-2 text-sm hover:bg-purple-700">Sair</button>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      </header>
       {/* ✅ CORPO PRINCIPAL COM SIDEBAR E CONTEÚDO */}
       <div className="flex-grow flex">
         {/* ✅ SIDEBAR */}

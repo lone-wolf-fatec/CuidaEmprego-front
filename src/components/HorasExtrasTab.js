@@ -28,7 +28,6 @@ const HorasExtrasTab = () => {
       const response = await axios.get('/api/funcionarios');
       setAllFuncionarios(response.data);
     } catch (error) {
-      console.error('Erro ao buscar funcionários:', error);
     }
   };
 

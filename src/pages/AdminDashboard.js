@@ -1,4 +1,4 @@
-// PARTE 1: AdminDashboard - Imports e Configurações Básicas
+// AdminDashboard.js - PARTE 1/8 - Imports e Configuração da API
 
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
@@ -15,7 +15,7 @@ import ContestacaoAdmin from '../components/ContestacaoAdmin';
 import GestaoTempoTab from '../components/GestaoTempoTab'; 
 import HorasExtrasTab from '../components/HorasExtrasTab';
 
-// ✅ CONFIGURAÇÃO DA API COM AUTENTICAÇÃO
+// ✅ CONFIGURAÇÃO DA API SIMPLIFICADA
 const api = axios.create({
   baseURL: 'http://localhost:8080/api',
   timeout: 15000,
@@ -28,7 +28,7 @@ const api = axios.create({
 // ✅ INTERCEPTOR PARA INCLUIR TOKEN DE AUTENTICAÇÃO
 api.interceptors.request.use(
   (config) => {
-    const token = localStorage.getItem('token');
+    const token = localStorage.getItem('token'); // ✅ DIRETO DO LOCALSTORAGE
     if (token) {
       config.headers.Authorization = `Bearer ${token}`;
       console.log('🔒 AdminDashboard - Token de autenticação adicionado');
@@ -44,16 +44,14 @@ api.interceptors.response.use(
   (error) => {
     if (error.response?.status === 401) {
       console.log('❌ AdminDashboard - Token expirado, redirecionando para login');
+      localStorage.removeItem('token'); // ✅ LIMPAR LOCALSTORAGE
       localStorage.removeItem('user');
-      localStorage.removeItem('token');
-      localStorage.removeItem('admin_visited_admin_page');
-      localStorage.removeItem('funcionarios_cache');
       window.location.href = '/login';
     }
     return Promise.reject(error);
   }
 );
-// PARTE 2: AdminDashboard - Estados e Inicialização
+// AdminDashboard.js - PARTE 2/8 - Componente e Estados
 
 const AdminDashboard = () => {
   const navigate = useNavigate();
@@ -85,6 +83,7 @@ const AdminDashboard = () => {
   const markAdminVisited = () => {
     localStorage.setItem('admin_visited_admin_page', 'true');
   };
+  // AdminDashboard.js - PARTE 3/8 - Funções de Carregamento
 
   // ✅ FUNÇÃO PARA CARREGAR DADOS DO ADMINISTRADOR
   const loadAdminData = async () => {
@@ -106,7 +105,8 @@ const AdminDashboard = () => {
     } catch (error) {
       console.error('❌ AdminDashboard - Erro ao carregar dados do admin:', error);
       // Fallback para dados locais
-      const storedUser = JSON.parse(localStorage.getItem('user') || '{}');
+      const storedUserString = localStorage.getItem('user');
+      const storedUser = storedUserString ? JSON.parse(storedUserString) : {};
       setUserData({
         name: storedUser.name || 'Administrador',
         email: storedUser.email || 'admin@cuidaemprego.com',
@@ -115,7 +115,6 @@ const AdminDashboard = () => {
       });
     }
   };
-  // PARTE 3: AdminDashboard - Carregamento de Dados dos Funcionários
 
   // ✅ FUNÇÃO PARA CARREGAR LISTAS DINÂMICAS COM FUNCIONÁRIOS CADASTRADOS
   const loadAdminSelectData = async () => {
@@ -243,7 +242,7 @@ const AdminDashboard = () => {
       setFuncionariosParaSelecao([]);
     }
   };
-  // PARTE 4: AdminDashboard - Notificações e Contestações
+  // AdminDashboard.js - PARTE 4/8 - Notificações e Controles
 
   // ✅ FUNÇÃO PARA CARREGAR NOTIFICAÇÕES DO ADMINISTRADOR
   const loadAdminNotifications = async () => {
@@ -348,7 +347,7 @@ const AdminDashboard = () => {
       setNotifications(updatedNotifications);
     }
   };
-  // PARTE 5: AdminDashboard - useEffect e Inicialização
+  // AdminDashboard.js - PARTE 5/8 - useEffect e Funções de Controle
 
   // ✅ VERIFICAÇÃO DE AUTENTICAÇÃO E INICIALIZAÇÃO COMPLETA
   useEffect(() => {
@@ -356,7 +355,7 @@ const AdminDashboard = () => {
       try {
         console.log('🚀 AdminDashboard - Inicializando dashboard administrador...');
         
-        // 1. VERIFICAR TOKEN DE AUTENTICAÇÃO PRIMEIRO
+        // ✅ 1. VERIFICAR TOKEN DE AUTENTICAÇÃO PRIMEIRO
         const token = localStorage.getItem('token');
         if (!token) {
           console.log('❌ AdminDashboard - Token de autenticação não encontrado');
@@ -364,9 +363,11 @@ const AdminDashboard = () => {
           return;
         }
 
-        // 2. VERIFICAR PERMISSÕES DE ADMINISTRADOR
-        const storedUser = JSON.parse(localStorage.getItem('user') || '{}');
-        if (!storedUser.isAdmin && storedUser.email !== 'admin@cuidaemprego.com') {
+        // ✅ 2. VERIFICAR PERMISSÕES DE ADMINISTRADOR
+        const storedUserString = localStorage.getItem('user');
+        const storedUser = storedUserString ? JSON.parse(storedUserString) : null;
+        
+        if (!storedUser?.isAdmin && storedUser?.email !== 'admin@cuidaemprego.com') {
           console.log('❌ AdminDashboard - Usuário não é administrador');
           navigate('/dashboard');
           return;
@@ -429,29 +430,22 @@ const AdminDashboard = () => {
     
     return () => clearInterval(interval);
   }, [loading, reloadFuncionarios, loadingFuncionarios]);
-  // PARTE 6: AdminDashboard - Funções de Controle
 
   // ✅ FUNÇÃO DE LOGOUT COM LIMPEZA COMPLETA VIA API
   const handleLogout = async () => {
     try {
       console.log('🚪 AdminDashboard - Fazendo logout via API...');
-      
-      // LOGOUT NO BACKEND VIA API
       const response = await api.post('/auth/logout');
       if (response.data.success) {
         console.log('✅ AdminDashboard - Logout realizado no backend');
       }
-      
     } catch (error) {
       console.log('⚠️ AdminDashboard - Erro no logout via API (não crítico):', error);
     } finally {
-      // LIMPEZA COMPLETA DE DADOS LOCAIS
-      localStorage.removeItem('user');
+      // ✅ LIMPAR LOCALSTORAGE DIRETO
       localStorage.removeItem('token');
-      localStorage.removeItem('admin_visited_admin_page');
-      localStorage.removeItem('funcionarios_cache');
-      
-      console.log('🔄 AdminDashboard - Dados locais limpos, redirecionando...');
+      localStorage.removeItem('user');
+      console.log('🔄 AdminDashboard - Dados limpos, redirecionando...');
       navigate('/login');
     }
   };
@@ -491,7 +485,7 @@ const AdminDashboard = () => {
   const getCargos = () => {
     return cargosAdmin;
   };
-  // PARTE 7: AdminDashboard - Telas de Loading e Erro
+  // AdminDashboard.js - PARTE 6/8 - Telas de Loading e Error
 
   // ✅ TELA DE LOADING COM STATUS DE SINCRONIZAÇÃO
   if (loading) {
@@ -535,7 +529,7 @@ const AdminDashboard = () => {
       </div>
     );
   }
-  // PARTE 8: AdminDashboard - Header e Barra Superior
+  // AdminDashboard.js - PARTE 7/8 - Header e Sidebar
 
   // ✅ RENDER DO COMPONENTE PRINCIPAL
   return (
@@ -1001,7 +995,6 @@ const AdminDashboard = () => {
           )}
         </div>
       </div>
-      // PARTE 11: AdminDashboard - Footer e Export
 
       {/* ✅ FOOTER COM STATUS COMPLETO DO SISTEMA */}
       <footer className="bg-purple-900 bg-opacity-80 shadow-lg py-4">

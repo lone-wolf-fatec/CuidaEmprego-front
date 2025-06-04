@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-
+import BotaoLimparPontos from '../components/BotaoLimparPontos';
 import ApprovedDataComponent from '../components/ApprovedDataComponent';
 import JustificativaAusencia from '../components/JustificativaAusencia';
 import { calcularHorasTrabalhadas, verificarAtraso } from '../utils/timeUtils';
@@ -1235,77 +1235,85 @@ const UserDashboard = () => {
           </div>
         )}
 
-        {activeTab === 'marcacoes' && (
-          <div className="bg-purple-800 bg-opacity-40 backdrop-blur-sm rounded-lg shadow-lg p-4 mb-8">
-            <h2 className="text-xl font-bold mb-4 flex items-center">
-              <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-              </svg>
-              Marcações e Correções
-            </h2>
-            <div className="overflow-x-auto">
-              <table className="w-full">
-                <thead>
-                  <tr className="text-purple-300 text-sm">
-                    <th className="text-left p-2">Data</th>
-                    <th className="text-left p-2">Hora</th>
-                    <th className="text-left p-2">Tipo</th>
-                    <th className="text-left p-2">Registrado Por</th>
-                    <th className="text-left p-2">Status</th>
-                    <th className="text-left p-2">Situação</th>
-                    <th className="text-left p-2">Ações</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {timeEntries.map((entry, index) => (
-                    <tr key={index} className="border-t border-purple-700">
-                      <td className="p-2">{entry.date}</td>
-                      <td className="p-2">{entry.time}</td>
-                      <td className="p-2">
-                        <span className={`inline-block px-2 py-1 rounded-full text-xs ${entry.type === 'entrada' ? 'bg-green-600' : 'bg-red-600'}`}>
-                          {entry.type ? entry.type.toUpperCase() : 'N/A'}
-                        </span>
-                      </td>
-                      <td className="p-2">{entry.registeredBy || userData.name}</td>
-                      <td className="p-2">
-                        <span className={`inline-block px-2 py-1 rounded-full text-xs
-                          ${entry.status === 'aprovado' ? 'bg-green-700' :
-                            entry.status === 'pendente' ? 'bg-yellow-600' : 'bg-red-700'}`}>
-                          {entry.status ? entry.status.toUpperCase() : 'N/A'}
-                        </span>
-                      </td>
-                      <td className="p-2">
-                        {entry.atraso ? (
-                          <span className="inline-block px-2 py-1 rounded-full text-xs bg-orange-600">
-                            ATRASO
-                          </span>
-                        ) : (
-                          <span className="inline-block px-2 py-1 rounded-full text-xs bg-green-600">
-                            NORMAL
-                          </span>
-                        )}
-                      </td>
-                      <td className="p-2">
-                        {temSolicitacaoPendente(entry) ? (
-                          <span className="inline-block px-2 py-1 rounded-full text-xs bg-yellow-600">
-                            CORREÇÃO PENDENTE
-                          </span>
-                        ) : (
-                          <button
-                            onClick={() => openCorrectionModal(entry)}
-                            className="bg-purple-600 hover:bg-purple-700 text-white text-xs px-2 py-1 rounded-md"
-                          >
-                            Solicitar Correção
-                          </button>
-                        )}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        )}
+   {activeTab === 'marcacoes' && (
+  <div className="bg-purple-800 bg-opacity-40 backdrop-blur-sm rounded-lg shadow-lg p-4 mb-8">
+    <h2 className="text-xl font-bold mb-4 flex items-center">
+      <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+      </svg>
+      Marcações e Correções
+    </h2>
+    <div className="overflow-x-auto">
+      <table className="w-full">
+        <thead>
+          <tr className="text-purple-300 text-sm">
+            <th className="text-left p-2">Data</th>
+            <th className="text-left p-2">Hora</th>
+            <th className="text-left p-2">Tipo</th>
+            <th className="text-left p-2">Registrado Por</th>
+            <th className="text-left p-2">Status</th>
+            <th className="text-left p-2">Situação</th>
+            <th className="text-left p-2">Ações</th>
+          </tr>
+        </thead>
+        <tbody>
+          {timeEntries.map((entry, index) => (
+            <tr key={index} className="border-t border-purple-700">
+              <td className="p-2">{entry.date}</td>
+              <td className="p-2">{entry.time}</td>
+              <td className="p-2">
+                <span className={`inline-block px-2 py-1 rounded-full text-xs ${entry.type === 'entrada' ? 'bg-green-600' : 'bg-red-600'}`}>
+                  {entry.type ? entry.type.toUpperCase() : 'N/A'}
+                </span>
+              </td>
+              <td className="p-2">{entry.registeredBy || userData.name}</td>
+              <td className="p-2">
+                <span className={`inline-block px-2 py-1 rounded-full text-xs
+                  ${entry.status === 'aprovado' ? 'bg-green-700' :
+                    entry.status === 'pendente' ? 'bg-yellow-600' : 'bg-red-700'}`}>
+                  {entry.status ? entry.status.toUpperCase() : 'N/A'}
+                </span>
+              </td>
+              <td className="p-2">
+                {entry.atraso ? (
+                  <span className="inline-block px-2 py-1 rounded-full text-xs bg-orange-600">
+                    ATRASO
+                  </span>
+                ) : (
+                  <span className="inline-block px-2 py-1 rounded-full text-xs bg-green-600">
+                    NORMAL
+                  </span>
+                )}
+              </td>
+              <td className="p-2">
+                {temSolicitacaoPendente(entry) ? (
+                  <span className="inline-block px-2 py-1 rounded-full text-xs bg-yellow-600">
+                    CORREÇÃO PENDENTE
+                  </span>
+                ) : (
+                  <button
+                    onClick={() => openCorrectionModal(entry)}
+                    className="bg-purple-600 hover:bg-purple-700 text-white text-xs px-2 py-1 rounded-md"
+                  >
+                    Solicitar Correção
+                  </button>
+                )}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+    
+    {/* BOTÃO PARA LIMPAR REGISTROS */}
+    <BotaoLimparPontos 
+      userData={userData} 
+      setTimeEntries={setTimeEntries} 
+      setLastAction={setLastAction} 
+    />
+  </div>
+)}
+
         {activeTab === 'historico' && (
           <div className="bg-purple-800 bg-opacity-40 backdrop-blur-sm rounded-lg shadow-lg p-4 mb-8">
             <h2 className="text-xl font-bold mb-4 flex items-center">

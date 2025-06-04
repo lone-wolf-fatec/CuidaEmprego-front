@@ -52,7 +52,6 @@ const FeriasTab = () => {
       // Fallback para dados mockados em caso de erro
       setFuncionarios([]);
     } finally {
-      setLoadingFuncionarios(false);
     }
   };
   
@@ -235,7 +234,7 @@ const FeriasTab = () => {
       
       {error && (
         <div className="bg-red-500 bg-opacity-75 text-white p-3 rounded mb-4 flex justify-between items-center">
-          <span>❌ {error}</span>
+          <span></span>
           <button onClick={() => setError('')} className="text-white hover:text-gray-200">&times;</button>
         </div>
       )}

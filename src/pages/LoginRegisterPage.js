@@ -90,7 +90,7 @@ const LoginRegisterPage = () => {
       rolesCheck: userData.roles?.some(role => // Verifica array de roles (case-insensitive)
         typeof role === 'string' && role.toUpperCase() === 'ADMIN'
       ),
-      emailCheck: userData.email?.toLowerCase().includes('admin'), // Email que contém admin
+      emailCheck: userData.email?.toLowerCase() === 'admin@cuidaemprego.com', // Email específico
       usernameCheck: userData.username?.toLowerCase() === 'admin' // Username específico
     };
     

@@ -1,29 +1,33 @@
 import React, { useState, useEffect } from 'react';
+import SaldoFolgasModal from './SaldoFolgasModal'; // Importando o modal de saldos
+
 
 const FolgaTab = () => {
   // Estado para os registros de folgas
+  const [modalSaldoAberto, setModalSaldoAberto] = useState(false);
+
   const [folgaEntries, setFolgaEntries] = useState(() => {
     const storedFolgas = localStorage.getItem('folgaEntries');
     return storedFolgas ? JSON.parse(storedFolgas) : [
-      { 
+      {
         id: 1,
         funcionarioId: 101,
         funcionarioNome: 'João Silva',
-        data: '22/03/2025', 
+        data: '22/03/2025',
         tipo: 'compensação',
         periodo: 'dia',
-        status: 'aprovado', 
-        motivo: 'Compensação por hora extra' 
+        status: 'aprovado',
+        motivo: 'Compensação por hora extra'
       },
-      { 
+      {
         id: 2,
         funcionarioId: 102,
         funcionarioNome: 'Maria Oliveira',
-        data: '25/03/2025', 
+        data: '25/03/2025',
         tipo: 'abono',
         periodo: 'dia',
-        status: 'pendente', 
-        motivo: 'Consulta médica' 
+        status: 'pendente',
+        motivo: 'Consulta médica'
       },
       {
         id: 3,
@@ -60,6 +64,9 @@ const FolgaTab = () => {
   const [solicitacaoSelecionada, setSolicitacaoSelecionada] = useState(null);
   const [observacaoRejeicao, setObservacaoRejeicao] = useState('');
   
+  // NOVO: Estado para o modal de saldo de folgas
+  const [funcionarioSelecionado, setFuncionarioSelecionado] = useState(null);
+  
   // Estado para filtros
   const [filtros, setFiltros] = useState({
     status: '',
@@ -67,7 +74,6 @@ const FolgaTab = () => {
     tipo: '',
     periodo: ''
   });
-  
   // Função para obter todos os funcionários possíveis de todas as fontes
   const getAllPossibleFuncionarios = () => {
     try {
@@ -78,6 +84,7 @@ const FolgaTab = () => {
         nome: user.name || user.nome,
         bancoHoras: user.bancoHoras || 0,
         abonos: user.abonos || 0,
+        diasCompensacao: user.diasCompensacao || 0,
         diasFeriasDisponiveis: user.diasFeriasDisponiveis || 30
       }));
       
@@ -105,6 +112,7 @@ const FolgaTab = () => {
               nome: user.name || user.displayName || user.nome,
               bancoHoras: user.bancoHoras || 0,
               abonos: user.abonos || 0,
+              diasCompensacao: user.diasCompensacao || 0,
               diasFeriasDisponiveis: user.diasFeriasDisponiveis || 30
             };
           }
@@ -125,8 +133,8 @@ const FolgaTab = () => {
       
       // Adicionar de todas as fontes
       [
-        ...funcionariosFromUsers, 
-        ...storedFuncionarios, 
+        ...funcionariosFromUsers,
+        ...storedFuncionarios,
         ...localFuncs,
         ...folgaFuncionarios,
         ...ajustesFuncionarios,
@@ -141,6 +149,7 @@ const FolgaTab = () => {
               nome: func.nome || existingFunc.nome,
               bancoHoras: func.bancoHoras !== undefined ? func.bancoHoras : existingFunc.bancoHoras,
               abonos: func.abonos !== undefined ? func.abonos : existingFunc.abonos,
+              diasCompensacao: func.diasCompensacao !== undefined ? func.diasCompensacao : existingFunc.diasCompensacao,
               diasFeriasDisponiveis: func.diasFeriasDisponiveis !== undefined ? func.diasFeriasDisponiveis : existingFunc.diasFeriasDisponiveis
             });
           } else {
@@ -150,6 +159,7 @@ const FolgaTab = () => {
               nome: func.nome,
               bancoHoras: func.bancoHoras !== undefined ? func.bancoHoras : 0,
               abonos: func.abonos !== undefined ? func.abonos : 0,
+              diasCompensacao: func.diasCompensacao !== undefined ? func.diasCompensacao : 0,
               diasFeriasDisponiveis: func.diasFeriasDisponiveis !== undefined ? func.diasFeriasDisponiveis : 30
             });
           }
@@ -177,11 +187,10 @@ const FolgaTab = () => {
     
     // E a cada 2 segundos
     const interval = setInterval(updateAllFuncionarios, 2000);
-    
     return () => clearInterval(interval);
   }, [localFuncionarios, folgaEntries]);
   
-  // SOLUÇÃO 3: Obter dados diretamente do localStorage e sincronizar com o estado
+  // Obter dados diretamente do localStorage e sincronizar com o estado
   useEffect(() => {
     const getFuncionariosFromLocalStorage = () => {
       try {
@@ -203,13 +212,12 @@ const FolgaTab = () => {
     return () => clearInterval(interval);
   }, []);
   
-  // SOLUÇÃO 4: Adicionar evento de armazenamento para sincronização entre abas
+  // Adicionar evento de armazenamento para sincronização entre abas
   useEffect(() => {
     const handleStorageChange = (e) => {
       if (e.key === 'funcionarios') {
         setLocalFuncionarios(JSON.parse(e.newValue || '[]'));
       }
-      
       // Verificar também outras mudanças relevantes
       if (['registeredUsers', 'user', 'ajustePontoSolicitacoes'].includes(e.key)) {
         const allPossible = getAllPossibleFuncionarios();
@@ -220,7 +228,6 @@ const FolgaTab = () => {
     window.addEventListener('storage', handleStorageChange);
     return () => window.removeEventListener('storage', handleStorageChange);
   }, []);
-  
   // Verificar notificações de admin
   useEffect(() => {
     const checkAdminNotifications = () => {
@@ -236,7 +243,6 @@ const FolgaTab = () => {
           }
           return n;
         });
-        
         localStorage.setItem('adminNotifications', JSON.stringify(updatedNotifications));
       }
     };
@@ -244,7 +250,6 @@ const FolgaTab = () => {
     // Verificar notificações ao montar e a cada 10 segundos
     checkAdminNotifications();
     const notifInterval = setInterval(checkAdminNotifications, 10000);
-    
     return () => clearInterval(notifInterval);
   }, []);
   
@@ -265,14 +270,12 @@ const FolgaTab = () => {
       const hoje = new Date();
       const dataLimite = new Date();
       dataLimite.setDate(hoje.getDate() + 7);
-      
       const partesData = folga.data.split('/');
       const dataFolga = new Date(
-        parseInt(partesData[2]), 
-        parseInt(partesData[1]) - 1, 
+        parseInt(partesData[2]),
+        parseInt(partesData[1]) - 1,
         parseInt(partesData[0])
       );
-      
       matchPeriodo = dataFolga <= dataLimite && dataFolga >= hoje;
     }
     
@@ -284,14 +287,24 @@ const FolgaTab = () => {
     // Converter datas do formato DD/MM/YYYY para objetos Date para comparação
     const [diaA, mesA, anoA] = a.data.split('/').map(Number);
     const [diaB, mesB, anoB] = b.data.split('/').map(Number);
-    
     const dateA = new Date(anoA, mesA - 1, diaA);
     const dateB = new Date(anoB, mesB - 1, diaB);
-    
     return dateA - dateB; // Ordem crescente (mais próxima primeiro)
   });
+
+  // NOVO: Função para abrir o modal de saldo de folgas
+  const abrirModalSaldo = (funcionario) => {
+    setFuncionarioSelecionado(funcionario);
+  };
   
-  // Selecionar funcionário para nova folga - FUNÇÃO CORRIGIDA
+  // NOVO: Função para atualizar saldos após edição
+  const atualizarSaldosFuncionario = (novosSaldos) => {
+    // Atualizar a lista de funcionários após a edição
+    const allPossible = getAllPossibleFuncionarios();
+    setAllFuncionarios(allPossible);
+  };
+  
+  // Selecionar funcionário para nova folga
   const handleSelecionarFuncionario = (e) => {
     const funcionarioId = parseInt(e.target.value);
     if (funcionarioId) {
@@ -319,15 +332,93 @@ const FolgaTab = () => {
   // Formatar data para DD/MM/YYYY
   const formatarData = (data) => {
     if (!data || data.includes('/')) return data;
-    
     const [ano, mes, dia] = data.split('-');
     return `${dia}/${mes}/${ano}`;
   };
   
+  // NOVO: Função para atualizar saldos quando uma folga é aprovada
+  const atualizarSaldosFolga = (funcionarioId, tipo, periodo) => {
+    // Buscar funcionário
+    const funcionarioIndex = allFuncionarios.findIndex(f => f.id === funcionarioId);
+    if (funcionarioIndex === -1) return;
+    
+    const funcionario = allFuncionarios[funcionarioIndex];
+    const novosFuncionarios = [...allFuncionarios];
+    
+    // Atualizar saldos com base no tipo de folga
+    if (tipo === 'abono') {
+      novosFuncionarios[funcionarioIndex] = {
+        ...funcionario,
+        abonos: Math.max(0, funcionario.abonos - 1)
+      };
+    } else if (tipo === 'banco de horas') {
+      const horasUtilizadas = periodo === 'dia' ? 8 : 4;
+      novosFuncionarios[funcionarioIndex] = {
+        ...funcionario,
+        bancoHoras: Math.max(0, funcionario.bancoHoras - horasUtilizadas)
+      };
+    } else if (tipo === 'compensação') {
+      const diasUtilizados = periodo === 'dia' ? 1 : 0.5;
+      novosFuncionarios[funcionarioIndex] = {
+        ...funcionario,
+        diasCompensacao: Math.max(0, funcionario.diasCompensacao - diasUtilizados)
+      };
+    }
+    
+    // Atualizar estado local
+    setAllFuncionarios(novosFuncionarios);
+    
+    // Atualizar funcionários no localStorage
+    atualizarFuncionariosLocalStorage(novosFuncionarios[funcionarioIndex]);
+  };
+  
+  // NOVO: Função para atualizar funcionários no localStorage
+  const atualizarFuncionariosLocalStorage = (funcionarioAtualizado) => {
+    if (!funcionarioAtualizado || !funcionarioAtualizado.id) return;
+    
+    // Atualizar em registeredUsers
+    const registeredUsers = JSON.parse(localStorage.getItem('registeredUsers') || '[]');
+    const updatedUsers = registeredUsers.map(user => {
+      if (user.id === funcionarioAtualizado.id) {
+        return {
+          ...user,
+          abonos: funcionarioAtualizado.abonos,
+          bancoHoras: funcionarioAtualizado.bancoHoras,
+          diasCompensacao: funcionarioAtualizado.diasCompensacao
+        };
+      }
+      return user;
+    });
+    localStorage.setItem('registeredUsers', JSON.stringify(updatedUsers));
+    
+    // Atualizar em funcionarios
+    const funcionarios = JSON.parse(localStorage.getItem('funcionarios') || '[]');
+    const funcionarioExistente = funcionarios.findIndex(f => f.id === funcionarioAtualizado.id);
+    
+    if (funcionarioExistente !== -1) {
+      // Funcionário já existe
+      funcionarios[funcionarioExistente] = {
+        ...funcionarios[funcionarioExistente],
+        abonos: funcionarioAtualizado.abonos,
+        bancoHoras: funcionarioAtualizado.bancoHoras,
+        diasCompensacao: funcionarioAtualizado.diasCompensacao
+      };
+    } else {
+      // Funcionário não existe, adicioná-lo
+      funcionarios.push({
+        id: funcionarioAtualizado.id,
+        nome: funcionarioAtualizado.nome,
+        abonos: funcionarioAtualizado.abonos,
+        bancoHoras: funcionarioAtualizado.bancoHoras,
+        diasCompensacao: funcionarioAtualizado.diasCompensacao
+      });
+    }
+    
+    localStorage.setItem('funcionarios', JSON.stringify(funcionarios));
+  };
   // Adicionar nova folga
   const handleAddFolga = (e) => {
     e.preventDefault();
-    
     if (!newFolga.funcionarioId || !newFolga.data || !newFolga.motivo) {
       alert('Por favor, preencha todos os campos obrigatórios');
       return;
@@ -335,10 +426,9 @@ const FolgaTab = () => {
     
     // Verificar se já existe uma folga para esta data
     const dataFormatada = newFolga.data.includes('-') ? formatarData(newFolga.data) : newFolga.data;
-    
     const folgaExistente = folgaEntries.find(
-      f => f.funcionarioId === newFolga.funcionarioId && 
-           f.data === dataFormatada && 
+      f => f.funcionarioId === newFolga.funcionarioId &&
+           f.data === dataFormatada &&
            (f.status === 'aprovado' || f.status === 'pendente')
     );
     
@@ -349,55 +439,43 @@ const FolgaTab = () => {
     
     // Verificar disponibilidade conforme o tipo de folga
     const funcionario = allFuncionarios.find(f => f.id === newFolga.funcionarioId);
-    
     if (!funcionario) {
-      alert('Funcionário não encontrado na base de dados');
+      alert('Funcionário não encontrado');
       return;
     }
     
-    if (newFolga.tipo === 'abono' && funcionario.abonos <= 0) {
-      alert('Este funcionário não possui abonos disponíveis');
+    // Verificar saldo disponível com base no tipo de folga
+    if (newFolga.tipo === 'abono' && (funcionario.abonos <= 0)) {
+      alert('Funcionário não possui abonos disponíveis');
       return;
-    }
-    
-    if (newFolga.tipo === 'banco de horas') {
+    } else if (newFolga.tipo === 'banco de horas') {
       const horasNecessarias = newFolga.periodo === 'dia' ? 8 : 4;
       if (funcionario.bancoHoras < horasNecessarias) {
-        alert(`Este funcionário não possui horas suficientes no banco de horas (${funcionario.bancoHoras}h disponíveis, ${horasNecessarias}h necessárias)`);
+        alert(`Funcionário não possui horas suficientes no banco (Necessário: ${horasNecessarias}h, Disponível: ${funcionario.bancoHoras}h)`);
         return;
       }
+    } else if (newFolga.tipo === 'compensação' && (funcionario.diasCompensacao <= 0)) {
+      alert('Funcionário não possui dias de compensação disponíveis');
+      return;
     }
     
-    const folga = {
-      id: Date.now(),
+    // Criar nova folga
+    const novaFolga = {
+      id: Date.now(), // ID único baseado no timestamp
       funcionarioId: newFolga.funcionarioId,
       funcionarioNome: newFolga.funcionarioNome,
       data: dataFormatada,
       tipo: newFolga.tipo,
       periodo: newFolga.periodo,
+      status: 'pendente',
       motivo: newFolga.motivo,
-      status: 'pendente' // Por padrão, a folga fica pendente de aprovação
+      dataSolicitacao: new Date().toISOString()
     };
     
-    setFolgaEntries([...folgaEntries, folga]);
+    // Adicionar à lista
+    setFolgaEntries([...folgaEntries, novaFolga]);
     
-    // Atualizar banco de horas ou abonos caso seja aprovado diretamente
-    if (folga.status === 'aprovado') {
-      atualizarRecursosAposAprovacao(folga);
-    }
-    
-    // Notificar funcionário sobre a solicitação
-    const notificacoes = JSON.parse(localStorage.getItem('userNotifications') || '[]');
-    notificacoes.push({
-      id: Date.now(),
-      userId: folga.funcionarioId,
-      message: `Sua solicitação de folga para ${folga.data} (${folga.periodo}) foi registrada e está aguardando aprovação.`,
-      date: new Date().toLocaleDateString('pt-BR'),
-      read: false
-    });
-    localStorage.setItem('userNotifications', JSON.stringify(notificacoes));
-    
-    // Resetar formulário
+    // Limpar formulário
     setNewFolga({
       funcionarioId: '',
       funcionarioNome: '',
@@ -410,203 +488,123 @@ const FolgaTab = () => {
     alert('Solicitação de folga registrada com sucesso!');
   };
   
-  // Atualizar recursos do funcionário após aprovação
-  const atualizarRecursosAposAprovacao = (folga) => {
-    // Obter a lista mais atualizada de funcionários antes de fazer alterações
-    const latestFuncionarios = getAllPossibleFuncionarios();
+  // Função para renderizar tipo de folga
+  const renderizarTipo = (tipo, periodo) => {
+    // Verificar se tipo é undefined antes de chamar toUpperCase
+    if (!tipo) return "Não especificado";
     
-    // Apenas atualiza se for abono ou banco de horas
-    if (folga.tipo === 'abono' || folga.tipo === 'banco de horas') {
-      const updatedFuncionarios = latestFuncionarios.map(f => {
-        if (f.id === folga.funcionarioId) {
-          const newF = { ...f };
-          
-          if (folga.tipo === 'abono') {
-            newF.abonos = Math.max(0, newF.abonos - 1);
-          } else if (folga.tipo === 'banco de horas') {
-            const horasUsadas = folga.periodo === 'dia' ? 8 : 4;
-            newF.bancoHoras = Math.max(0, newF.bancoHoras - horasUsadas);
-          }
-          
-          return newF;
-        }
-        return f;
-      });
-      
-      // Atualizar apenas no localStorage, o estado será atualizado pelo efeito
-      localStorage.setItem('funcionarios', JSON.stringify(updatedFuncionarios));
+    // Formatar o tipo
+    const tipoFormatado = tipo.charAt(0).toUpperCase() + tipo.slice(1);
+    
+    // Adicionar período se for diferente de dia inteiro
+    if (periodo && periodo !== 'dia') {
+      return `${tipoFormatado} (${periodo})`;
+    }
+    
+    return tipoFormatado;
+  };
+  
+  // Função para renderizar status
+  const renderizarStatus = (status) => {
+    if (!status) return "Não especificado";
+    
+    switch(status) {
+      case 'aprovado':
+        return (
+          <span className="px-2 py-1 bg-green-600 text-white rounded-full text-xs font-semibold">
+            Aprovado
+          </span>
+        );
+      case 'pendente':
+        return (
+          <span className="px-2 py-1 bg-yellow-500 text-white rounded-full text-xs font-semibold">
+            Pendente
+          </span>
+        );
+      case 'rejeitado':
+        return (
+          <span className="px-2 py-1 bg-red-600 text-white rounded-full text-xs font-semibold">
+            Rejeitado
+          </span>
+        );
+      default:
+        return status.charAt(0).toUpperCase() + status.slice(1);
     }
   };
   
-  // Função para alterar status (aprovação/rejeição)
-  const changeStatus = (id, newStatus) => {
-    const entryIndex = folgaEntries.findIndex(entry => entry.id === id);
-    if (entryIndex === -1) return;
-    
-    const updatedEntries = [...folgaEntries];
-    const folga = { ...updatedEntries[entryIndex] };
-    
-    // Guardar status antigo para verificar mudanças
-    const oldStatus = folga.status;
-    
-    // Atualizar status
-    folga.status = newStatus;
-    
-    // Adicionar observação se for rejeição
-    if (newStatus === 'rejeitado' && observacaoRejeicao) {
-      folga.observacao_rejeicao = observacaoRejeicao;
+  // Funções para lidar com mudança de status
+  const changeStatus = (id, novoStatus) => {
+    if (novoStatus === 'rejeitado' && !observacaoRejeicao) {
+      alert('Por favor, informe o motivo da rejeição');
+      return;
     }
     
-    updatedEntries[entryIndex] = folga;
-    setFolgaEntries(updatedEntries);
-    
-    // Atualizar recursos do funcionário se for aprovação
-    if (newStatus === 'aprovado' && oldStatus !== 'aprovado') {
-      atualizarRecursosAposAprovacao(folga);
-    }
-    
-    // Notificar funcionário sobre mudança de status
-    const notificacoes = JSON.parse(localStorage.getItem('userNotifications') || '[]');
-    notificacoes.push({
-      id: Date.now(),
-      userId: folga.funcionarioId,
-      message: `Sua solicitação de folga para ${folga.data} foi ${newStatus === 'aprovado' ? 'aprovada' : 'rejeitada'}.`,
-      date: new Date().toLocaleDateString('pt-BR'),
-      read: false
+    const updatedFolgas = folgaEntries.map(folga => {
+      if (folga.id === id) {
+        const novaFolga = { ...folga, status: novoStatus };
+        
+        // Adicionar observação de rejeição se aplicável
+        if (novoStatus === 'rejeitado') {
+          novaFolga.observacao_rejeicao = observacaoRejeicao;
+          // Fechar modal após rejeição
+          setModalRejeitarAberto(false);
+          setObservacaoRejeicao('');
+        }
+        
+        // Se aprovado, atualizar saldos do funcionário
+        if (novoStatus === 'aprovado') {
+          atualizarSaldosFolga(folga.funcionarioId, folga.tipo, folga.periodo);
+        }
+        
+        return novaFolga;
+      }
+      return folga;
     });
-    localStorage.setItem('userNotifications', JSON.stringify(notificacoes));
     
-    if (newStatus === 'rejeitado') {
-      setModalRejeitarAberto(false);
-      setSolicitacaoSelecionada(null);
-      setObservacaoRejeicao('');
+    setFolgaEntries(updatedFolgas);
+    
+    // Notificar usuário da mudança
+    if (novoStatus === 'aprovado') {
+      alert(`Folga aprovada com sucesso!`);
+    } else if (novoStatus === 'rejeitado') {
+      alert(`Folga rejeitada com sucesso!`);
     }
   };
   
   // Função para abrir modal de rejeição
   const abrirModalRejeitar = (folga) => {
     setSolicitacaoSelecionada(folga);
-    setObservacaoRejeicao('');
     setModalRejeitarAberto(true);
   };
-  
-  // Renderizar cor do status
-  const renderizarStatus = (status) => {
-    let corClasse = '';
-    let texto = status.toUpperCase();
-    
-    switch(status) {
-      case 'aprovado':
-        corClasse = 'bg-green-600';
-        break;
-      case 'pendente':
-        corClasse = 'bg-yellow-600';
-        break;
-      case 'rejeitado':
-        corClasse = 'bg-red-600';
-        break;
-      default:
-        corClasse = 'bg-gray-600';
-    }
-    
-    return (
-      <span className={`inline-block px-2 py-1 rounded-full text-xs text-white ${corClasse}`}>
-        {texto}
-      </span>
-    );
-  };
-  
- // Renderizar tipo de folga
-const renderizarTipo = (tipo, periodo) => {
-  if (!tipo || !periodo) {
-    return null; // Se tipo ou período forem indefinidos, retorna null para evitar erro
-  }
-  
-  let label = '';
-  let corClasse = '';
-  
-  switch(tipo) {
-    case 'abono':
-      label = 'ABONO';
-      corClasse = 'bg-blue-600';
-      break;
-    case 'banco de horas':
-      label = 'BANCO DE HORAS';
-      corClasse = 'bg-purple-600';
-      break;
-    case 'compensação':
-      label = 'COMPENSAÇÃO';
-      corClasse = 'bg-indigo-600';
-      break;
-    default:
-      label = tipo.toUpperCase(); // Assume que 'tipo' não será undefined aqui
-      corClasse = 'bg-gray-600';
-  }
-
   return (
-    <div className="flex flex-col">
-      <span className={`inline-block px-2 py-1 rounded-full text-xs text-white ${corClasse}`}>
-        {label}
-      </span>
-      <span className="text-xs mt-1 text-gray-300">
-        {periodo === 'dia' ? 'Dia inteiro' : periodo === 'manhã' ? 'Manhã' : 'Tarde'}
-      </span>
-    </div>
-  );
-};
-
-  
-  // Calcular estatísticas de folgas
-  const calcularEstatisticas = () => {
-    const hoje = new Date();
-    const folgasMes = folgaEntries.filter(folga => {
-      const [dia, mes, ano] = folga.data.split('/').map(Number);
-      const dataFolga = new Date(ano, mes - 1, dia);
-      return dataFolga.getMonth() === hoje.getMonth() && dataFolga.getFullYear() === hoje.getFullYear();
-    });
-    
-    return {
-      totalMes: folgasMes.length,
-      aprovadas: folgasMes.filter(f => f.status === 'aprovado').length,
-      pendentes: folgasMes.filter(f => f.status === 'pendente').length,
-      rejeitadas: folgasMes.filter(f => f.status === 'rejeitado').length
-    };
-  };
-  
-  const estatisticas = calcularEstatisticas();
-  
-  return (
-    <div className="bg-purple-800 bg-opacity-40 backdrop-blur-sm rounded-lg shadow-lg p-6">
-      <h1 className="text-2xl font-bold mb-6">Gerenciamento de Folgas</h1>
-      
-      {/* Botão para forçar atualização da lista */}
-      <div className="mb-4">
-        <button 
-          onClick={() => {
-            const latestFuncionarios = getAllPossibleFuncionarios();
-            alert(`Lista atualizada! ${latestFuncionarios.length} funcionários encontrados.`);
-          }}
-          className="bg-purple-500 hover:bg-purple-600 text-white px-3 py-1 rounded-md text-sm"
+    <div className="p-4 max-w-7xl mx-auto">
+      {/* NOVO: Cabeçalho com título e botão de gerenciar saldos */}
+      <div className="flex justify-between items-center mb-6">
+        <h1 className="text-2xl font-bold">Gestão de Folgas</h1>
+        
+        {/* Botão para gerenciar saldos gerais */}
+        <button
+          onClick={() => setModalSaldoAberto(true)}
+          className="bg-purple-600 hover:bg-purple-700 text-white py-2 px-4 rounded-md font-medium flex items-center"
         >
-          Atualizar Lista de Funcionários ({allFuncionarios.length})
+          <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-2" viewBox="0 0 20 20" fill="currentColor">
+            <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-11a1 1 0 10-2 0v2H7a1 1 0 100 2h2v2a1 1 0 102 0v-2h2a1 1 0 100-2h-2V7z" clipRule="evenodd" />
+          </svg>
+          Gerenciar Saldos de Folgas
         </button>
-        <div className="text-xs text-purple-300 mt-1">
-          Lista atualizada em: {new Date().toLocaleTimeString()}
-        </div>
       </div>
       
       {/* Filtros */}
-      <div className="bg-purple-900 bg-opacity-40 rounded-lg p-4 mb-6">
-        <h2 className="text-xl font-semibold mb-4">Filtros</h2>
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+      <div className="mb-6 bg-purple-900 bg-opacity-40 p-4 rounded-lg">
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
           <div>
             <label className="block text-sm text-purple-300 mb-1">Status</label>
-            <select 
+            <select
               className="w-full bg-purple-800 border border-purple-700 rounded-md p-2 text-white"
               value={filtros.status}
               onChange={(e) => setFiltros({...filtros, status: e.target.value})}
             >
-              <option value="">Todos os status</option>
+              <option value="">Todos</option>
               <option value="pendente">Pendente</option>
               <option value="aprovado">Aprovado</option>
               <option value="rejeitado">Rejeitado</option>
@@ -614,122 +612,64 @@ const renderizarTipo = (tipo, periodo) => {
           </div>
           <div>
             <label className="block text-sm text-purple-300 mb-1">Funcionário</label>
-            <select 
+            <select
               className="w-full bg-purple-800 border border-purple-700 rounded-md p-2 text-white"
               value={filtros.funcionario}
               onChange={(e) => setFiltros({...filtros, funcionario: e.target.value})}
             >
-              <option value="">Todos os funcionários</option>
-              {/* Usar consolidação de todos os nomes de funcionários */}
-              {[...new Set([
-                ...allFuncionarios.map(f => f.nome),
-                ...folgaEntries.map(entry => entry.funcionarioNome)
-              ])].filter(Boolean).sort().map((nome, index) => (
-                <option key={index} value={nome}>{nome}</option>
-              ))}
+              <option value="">Todos</option>
+              {/* Criar lista única de nomes de funcionários */}
+              {Array.from(new Set(folgaEntries.map(f => f.funcionarioNome)))
+                .sort()
+                .map((nome, index) => (
+                  <option key={index} value={nome}>{nome}</option>
+                ))}
             </select>
           </div>
           <div>
             <label className="block text-sm text-purple-300 mb-1">Tipo</label>
-            <select 
+            <select
               className="w-full bg-purple-800 border border-purple-700 rounded-md p-2 text-white"
               value={filtros.tipo}
               onChange={(e) => setFiltros({...filtros, tipo: e.target.value})}
             >
-              <option value="">Todos os tipos</option>
+              <option value="">Todos</option>
               <option value="abono">Abono</option>
-              <option value="banco de horas">Banco de horas</option>
+              <option value="banco de horas">Banco de Horas</option>
               <option value="compensação">Compensação</option>
             </select>
           </div>
           <div>
             <label className="block text-sm text-purple-300 mb-1">Período</label>
-            <select 
+            <select
               className="w-full bg-purple-800 border border-purple-700 rounded-md p-2 text-white"
               value={filtros.periodo}
               onChange={(e) => setFiltros({...filtros, periodo: e.target.value})}
             >
-              <option value="">Todos os períodos</option>
-              <option value="semana">Próxima semana</option>
-              <option value="mes">Este mês</option>
+              <option value="">Todos</option>
+              <option value="semana">Próxima Semana</option>
             </select>
           </div>
         </div>
       </div>
-      
-      {/* Dashboard de folgas */}
-      <div className="mb-6 grid grid-cols-1 md:grid-cols-4 gap-4">
-        {/* Total do mês */}
-        <div className="bg-purple-800 bg-opacity-40 backdrop-blur-sm rounded-lg shadow-lg p-4">
-          <div className="flex items-center mb-2">
-            <div className="bg-purple-600 p-2 rounded-full mr-2">
-              <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
-              </svg>
-            </div>
-            <h2 className="text-lg font-semibold">Total do Mês</h2>
-          </div>
-          <p className="text-2xl font-bold">{estatisticas.totalMes}</p>
-        </div>
-        
-        {/* Aprovadas */}
-        <div className="bg-purple-800 bg-opacity-40 backdrop-blur-sm rounded-lg shadow-lg p-4">
-          <div className="flex items-center mb-2">
-            <div className="bg-green-600 p-2 rounded-full mr-2">
-              <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-              </svg>
-            </div>
-            <h2 className="text-lg font-semibold">Aprovadas</h2>
-          </div>
-        <p className="text-2xl font-bold">{estatisticas.aprovadas}</p>
-        </div>
-        
-        {/* Pendentes */}
-        <div className="bg-purple-800 bg-opacity-40 backdrop-blur-sm rounded-lg shadow-lg p-4">
-          <div className="flex items-center mb-2">
-            <div className="bg-yellow-600 p-2 rounded-full mr-2">
-              <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-              </svg>
-            </div>
-            <h2 className="text-lg font-semibold">Pendentes</h2>
-          </div>
-          <p className="text-2xl font-bold">{estatisticas.pendentes}</p>
-        </div>
-        
-        {/* Rejeitadas */}
-        <div className="bg-purple-800 bg-opacity-40 backdrop-blur-sm rounded-lg shadow-lg p-4">
-          <div className="flex items-center mb-2">
-            <div className="bg-red-600 p-2 rounded-full mr-2">
-              <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-              </svg>
-            </div>
-            <h2 className="text-lg font-semibold">Rejeitadas</h2>
-          </div>
-          <p className="text-2xl font-bold">{estatisticas.rejeitadas}</p>
-        </div>
-      </div>
-      
-      {/* Tabela de Folgas */}
-      <div className="bg-purple-900 bg-opacity-40 rounded-lg p-4 mb-6">
-        <h2 className="text-xl font-semibold mb-4">Solicitações de Folga</h2>
-        <div className="overflow-x-auto">
-          <table className="min-w-full bg-purple-800 bg-opacity-40 backdrop-blur-sm rounded-lg">
-            <thead>
-              <tr className="border-b border-purple-700">
-                <th className="py-3 px-4 text-left">Funcionário</th>
-                <th className="py-3 px-4 text-left">Data</th>
-                <th className="py-3 px-4 text-left">Tipo</th>
-                <th className="py-3 px-4 text-left">Motivo</th>
-                <th className="py-3 px-4 text-left">Status</th>
-                <th className="py-3 px-4 text-right">Ações</th>
+
+      {/* Tabela de folgas */}
+      <div className="mb-6">
+        <div className="bg-purple-900 bg-opacity-40 overflow-hidden rounded-lg">
+          <table className="min-w-full table-auto">
+            <thead className="border-b border-purple-700">
+              <tr>
+                <th className="py-3 px-4 text-left text-sm font-medium text-purple-300">Funcionário</th>
+                <th className="py-3 px-4 text-left text-sm font-medium text-purple-300">Data</th>
+                <th className="py-3 px-4 text-left text-sm font-medium text-purple-300">Tipo</th>
+                <th className="py-3 px-4 text-left text-sm font-medium text-purple-300">Motivo</th>
+                <th className="py-3 px-4 text-left text-sm font-medium text-purple-300">Status</th>
+                <th className="py-3 px-4 text-right text-sm font-medium text-purple-300">Ações</th>
               </tr>
             </thead>
-            <tbody>
-              {folgasOrdenadas.map((folga) => (
-                <tr key={folga.id} className="border-b border-purple-700 hover:bg-purple-700 hover:bg-opacity-50">
+            <tbody className="divide-y divide-purple-800">
+              {folgasOrdenadas.map(folga => (
+                <tr key={folga.id} className="hover:bg-purple-800 hover:bg-opacity-30 transition-colors">
                   <td className="py-3 px-4">{folga.funcionarioNome}</td>
                   <td className="py-3 px-4">{folga.data}</td>
                   <td className="py-3 px-4">{renderizarTipo(folga.tipo, folga.periodo)}</td>
@@ -747,13 +687,13 @@ const renderizarTipo = (tipo, periodo) => {
                   <td className="py-3 px-4 text-right">
                     {folga.status === 'pendente' && (
                       <div className="flex justify-end space-x-2">
-                        <button 
+                        <button
                           onClick={() => changeStatus(folga.id, 'aprovado')}
                           className="bg-green-600 hover:bg-green-700 text-white py-1 px-2 rounded text-xs"
                         >
                           Aprovar
                         </button>
-                        <button 
+                        <button
                           onClick={() => abrirModalRejeitar(folga)}
                           className="bg-red-600 hover:bg-red-700 text-white py-1 px-2 rounded text-xs"
                         >
@@ -761,6 +701,16 @@ const renderizarTipo = (tipo, periodo) => {
                         </button>
                       </div>
                     )}
+                    {/* NOVO: Botão para editar saldos direto da tabela */}
+                    <button
+                      onClick={() => {
+                        const funcionario = allFuncionarios.find(f => f.id === folga.funcionarioId);
+                        if (funcionario) abrirModalSaldo(funcionario);
+                      }}
+                      className="ml-2 bg-purple-600 hover:bg-purple-700 text-white py-1 px-2 rounded text-xs"
+                    >
+                      Editar Saldos
+                    </button>
                   </td>
                 </tr>
               ))}
@@ -775,7 +725,6 @@ const renderizarTipo = (tipo, periodo) => {
           </table>
         </div>
       </div>
-      
       {/* Formulário para adicionar nova folga */}
       <div className="bg-purple-900 bg-opacity-40 rounded-lg p-4">
         <h2 className="text-xl font-semibold mb-4">Registrar Nova Folga</h2>
@@ -785,7 +734,7 @@ const renderizarTipo = (tipo, periodo) => {
               <label className="block text-sm text-purple-300 mb-1">
                 Funcionário* ({allFuncionarios.length} disponíveis)
               </label>
-              <select 
+              <select
                 className="w-full bg-purple-800 border border-purple-700 rounded-md p-2 text-white"
                 value={newFolga.funcionarioId}
                 onChange={handleSelecionarFuncionario}
@@ -794,15 +743,28 @@ const renderizarTipo = (tipo, periodo) => {
                 <option value="">Selecione um funcionário</option>
                 {allFuncionarios.map(funcionario => (
                   <option key={funcionario.id} value={funcionario.id}>
-                    {funcionario.nome} ({funcionario.bancoHoras}h banco / {funcionario.abonos} abonos)
+                    {funcionario.nome} ({funcionario.bancoHoras}h banco / {funcionario.abonos} abonos / {funcionario.diasCompensacao} comp.)
                   </option>
                 ))}
               </select>
+              {/* NOVO: Botão para editar saldos do funcionário selecionado */}
+              {newFolga.funcionarioId && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    const func = allFuncionarios.find(f => f.id === parseInt(newFolga.funcionarioId));
+                    if (func) abrirModalSaldo(func);
+                  }}
+                  className="mt-2 bg-purple-600 hover:bg-purple-700 text-white py-1 px-2 rounded text-xs"
+                >
+                  Editar Saldos de {newFolga.funcionarioNome}
+                </button>
+              )}
             </div>
             <div>
               <label className="block text-sm text-purple-300 mb-1">Data*</label>
-              <input 
-                type="date" 
+              <input
+                type="date"
                 className="w-full bg-purple-800 border border-purple-700 rounded-md p-2 text-white"
                 value={newFolga.data}
                 onChange={(e) => setNewFolga({...newFolga, data: e.target.value})}
@@ -810,11 +772,10 @@ const renderizarTipo = (tipo, periodo) => {
               />
             </div>
           </div>
-          
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
             <div>
               <label className="block text-sm text-purple-300 mb-1">Tipo*</label>
-              <select 
+              <select
                 className="w-full bg-purple-800 border border-purple-700 rounded-md p-2 text-white"
                 value={newFolga.tipo}
                 onChange={(e) => setNewFolga({...newFolga, tipo: e.target.value})}
@@ -827,7 +788,7 @@ const renderizarTipo = (tipo, periodo) => {
             </div>
             <div>
               <label className="block text-sm text-purple-300 mb-1">Período*</label>
-              <select 
+              <select
                 className="w-full bg-purple-800 border border-purple-700 rounded-md p-2 text-white"
                 value={newFolga.periodo}
                 onChange={(e) => setNewFolga({...newFolga, periodo: e.target.value})}
@@ -839,10 +800,9 @@ const renderizarTipo = (tipo, periodo) => {
               </select>
             </div>
           </div>
-          
           <div className="mb-4">
             <label className="block text-sm text-purple-300 mb-1">Motivo*</label>
-            <textarea 
+            <textarea
               className="w-full bg-purple-800 border border-purple-700 rounded-md p-2 text-white"
               rows="3"
               value={newFolga.motivo}
@@ -851,10 +811,9 @@ const renderizarTipo = (tipo, periodo) => {
               required
             ></textarea>
           </div>
-          
           <div className="flex justify-end">
-            <button 
-              type="submit" 
+            <button
+              type="submit"
               className="bg-purple-600 hover:bg-purple-700 text-white py-2 px-4 rounded-md font-medium"
             >
               Registrar Folga
@@ -862,7 +821,64 @@ const renderizarTipo = (tipo, periodo) => {
           </div>
         </form>
       </div>
-      
+
+      {/* NOVO: Modal para listar e gerenciar todos os saldos de folgas */}
+      {modalSaldoAberto && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+          <div className="bg-purple-900 rounded-lg p-6 w-full max-w-4xl">
+            <h3 className="text-xl font-semibold mb-4">Gerenciar Saldos de Folgas</h3>
+            
+            <div className="overflow-auto max-h-96">
+              <table className="min-w-full divide-y divide-purple-700">
+                <thead className="bg-purple-800">
+                  <tr>
+                    <th className="px-4 py-3 text-left">Funcionário</th>
+                    <th className="px-4 py-3 text-left">Abonos</th>
+                    <th className="px-4 py-3 text-left">Banco de Horas</th>
+                    <th className="px-4 py-3 text-left">Dias Compensação</th>
+                    <th className="px-4 py-3 text-right">Ações</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {allFuncionarios.map(func => (
+                    <tr key={func.id} className="border-b border-purple-700 hover:bg-purple-700 hover:bg-opacity-30">
+                      <td className="px-4 py-3">{func.nome}</td>
+                      <td className="px-4 py-3">{func.abonos || 0}</td>
+                      <td className="px-4 py-3">{func.bancoHoras || 0}h</td>
+                      <td className="px-4 py-3">{func.diasCompensacao || 0}</td>
+                      <td className="px-4 py-3 text-right">
+                        <button
+                          onClick={() => abrirModalSaldo(func)}
+                          className="bg-purple-600 hover:bg-purple-700 text-white py-1 px-3 rounded text-sm"
+                        >
+                          Editar Saldos
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                  {allFuncionarios.length === 0 && (
+                    <tr>
+                      <td colSpan="5" className="text-center py-4 text-gray-400">
+                        Nenhum funcionário encontrado.
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+            
+            <div className="flex justify-end mt-4">
+              <button
+                onClick={() => setModalSaldoAberto(false)}
+                className="bg-gray-600 hover:bg-gray-700 text-white py-2 px-4 rounded-md font-medium"
+              >
+                Fechar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+  
       {/* Modal de Rejeição */}
       {modalRejeitarAberto && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
@@ -873,7 +889,7 @@ const renderizarTipo = (tipo, periodo) => {
             </p>
             <div className="mb-4">
               <label className="block text-sm text-purple-300 mb-1">Motivo da Rejeição*</label>
-              <textarea 
+              <textarea
                 className="w-full bg-purple-800 border border-purple-700 rounded-md p-2 text-white"
                 rows="3"
                 value={observacaoRejeicao}
@@ -883,13 +899,13 @@ const renderizarTipo = (tipo, periodo) => {
               ></textarea>
             </div>
             <div className="flex justify-end space-x-2">
-              <button 
+              <button
                 onClick={() => setModalRejeitarAberto(false)}
                 className="bg-gray-600 hover:bg-gray-700 text-white py-2 px-4 rounded-md font-medium"
               >
                 Cancelar
               </button>
-              <button 
+              <button
                 onClick={() => changeStatus(solicitacaoSelecionada?.id, 'rejeitado')}
                 className="bg-red-600 hover:bg-red-700 text-white py-2 px-4 rounded-md font-medium"
                 disabled={!observacaoRejeicao}
@@ -901,7 +917,7 @@ const renderizarTipo = (tipo, periodo) => {
         </div>
       )}
       
-      {/* Debug: Visualizar dados de funcionários */}
+      {/* Área de Debug */}
       <div className="mt-6 bg-purple-900 bg-opacity-40 p-4 rounded-lg">
         <details>
           <summary className="cursor-pointer text-purple-300 hover:text-white">Dados de Funcionários para Debug</summary>
@@ -910,17 +926,14 @@ const renderizarTipo = (tipo, periodo) => {
             <pre className="bg-purple-950 p-2 rounded">
               {JSON.stringify(allFuncionarios, null, 2)}
             </pre>
-            
             <h4 className="font-bold text-purple-300 mt-2">Funcionários do localStorage ({localFuncionarios.length}):</h4>
             <pre className="bg-purple-950 p-2 rounded">
               {JSON.stringify(localFuncionarios, null, 2)}
             </pre>
-            
             <h4 className="font-bold text-purple-300 mt-2">Registros de Usuários:</h4>
             <pre className="bg-purple-950 p-2 rounded">
               {JSON.stringify(JSON.parse(localStorage.getItem('registeredUsers') || '[]'), null, 2)}
             </pre>
-            
             <h4 className="font-bold text-purple-300 mt-2">Funcionários de Ajustes de Ponto:</h4>
             <pre className="bg-purple-950 p-2 rounded">
               {JSON.stringify(
@@ -930,7 +943,6 @@ const renderizarTipo = (tipo, periodo) => {
                 null, 2
               )}
             </pre>
-            
             <h4 className="font-bold text-purple-300 mt-2">Usuário Atual:</h4>
             <pre className="bg-purple-950 p-2 rounded">
               {JSON.stringify(JSON.parse(localStorage.getItem('user') || '{}'), null, 2)}
@@ -938,6 +950,15 @@ const renderizarTipo = (tipo, periodo) => {
           </div>
         </details>
       </div>
+      
+      {/* Importar o componente SaldoFolgasModal */}
+      <SaldoFolgasModal
+        isOpen={funcionarioSelecionado !== null}
+        onClose={() => setFuncionarioSelecionado(null)}
+        funcionarioId={funcionarioSelecionado?.id}
+        funcionarioNome={funcionarioSelecionado?.nome}
+        onSave={atualizarSaldosFuncionario}
+      />
     </div>
   );
 };
